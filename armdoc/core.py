@@ -40,6 +40,7 @@ class State:
     joint_t: float = None
     limits: dict = field(default_factory=dict)       # name -> dict(lower, upper, velocity, effort)
     controllers: list = None                          # [(name, type, state)] or None if never answered
+    arm_joints: set = None                            # joints claimed by arm controllers; None = check all
     cm_missing: bool = False
     track: dict = field(default_factory=dict)         # controller -> (t, max abs error)
     track_bad_since: dict = field(default_factory=dict)
@@ -88,6 +89,13 @@ def _moved(s, now, window):
     return max((abs(cur[n] - old[n]) for n in cur if n in old), default=0.0)
 
 
+def is_arm_controller(name, typ):
+    """Controllers that drive arm joints (not broadcasters, not grippers)."""
+    if "broadcaster" in typ or "gripper" in name.lower() or "gripper" in typ.lower():
+        return False
+    return any(k in typ for k in ("trajectory", "effort", "position", "velocity", "impedance", "admittance"))
+
+
 def evaluate(s, now, c=Config()):
     f = []
     up = now - s.t0
@@ -95,7 +103,7 @@ def evaluate(s, now, c=Config()):
 
     if s.joint_t is None:
         if late:
-            f.append(Finding(WARN, "JOINT_STATES_NONE", "no /joint_states received"))
+            f.append(Finding(ERROR, "JOINT_STATES_NONE", "no /joint_states received (joint_state_broadcaster not running, or the sim is paused)"))
     elif now - s.joint_t > c.stale:
         f.append(Finding(ERROR, "JOINT_STATES_STALE", f"/joint_states silent for {now - s.joint_t:.1f}s "
                          "(controller manager or joint_state_broadcaster is down)"))
@@ -103,6 +111,8 @@ def evaluate(s, now, c=Config()):
     live = s.joint_t is not None and now - s.joint_t <= c.stale
     if live:
         for n, (p, v, e) in s.joints.items():
+            if s.arm_joints is not None and n not in s.arm_joints:
+                continue
             if not math.isfinite(p):
                 f.append(Finding(ERROR, "JOINT_NAN", f"{n} position is NaN/inf (diverged controller or bad state)"))
                 continue
@@ -132,17 +142,12 @@ def evaluate(s, now, c=Config()):
         if late:
             f.append(Finding(WARN, "NO_CONTROLLER_MANAGER", "/controller_manager/list_controllers is not answering"))
     elif s.controllers is not None:
-        arm = [x for x in s.controllers if "trajectory" in x[1] or "effort" in x[1] or "position" in x[1]
-               or "velocity" in x[1] or "impedance" in x[1]]
+        arm = [x for x in s.controllers if is_arm_controller(x[0], x[1])]
         for name, typ, st in s.controllers:
             if st != "active" and name in [a[0] for a in arm] and late:
                 f.append(Finding(ERROR, "CTRL_INACTIVE", f"controller {name} ({typ}) is {st}, not active"))
         if arm and not any(x[2] == "active" for x in arm) and late:
             f.append(Finding(ERROR, "NO_ACTIVE_ARM_CTRL", "no arm controller is active, so nothing can move the arm"))
-        if len([x for x in arm if x[2] == "active" and "broadcaster" not in x[1]]) > 1:
-            names = ", ".join(x[0] for x in arm if x[2] == "active")
-            f.append(Finding(WARN, "CTRL_CONFLICT", f"several arm controllers active at once ({names}); "
-                             "they may fight over the same joints"))
 
     if s.moveit_nodes is False and late:
         f.append(Finding(ERROR, "NO_MOVE_GROUP", "no move_group node on the graph; MoveIt requests will time out"))

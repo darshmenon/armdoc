@@ -1,0 +1,14 @@
+$ ros2 run armdoc armdoc --once 8        # UR3 in Gazebo, healthy
+OK    arm looks healthy
+
+$ ros2 control set_controller_state arm_controller inactive
+$ ros2 run armdoc armdoc --once 8
+ERROR [CTRL_INACTIVE] controller arm_controller (joint_trajectory_controller/JointTrajectoryController) is inactive, not active
+ERROR [NO_ACTIVE_ARM_CTRL] no arm controller is active, so nothing can move the arm
+
+$ ros2 run armdoc armdoc            # then pause the sim with gz service
+OK    arm looks healthy
+OK    arm looks healthy
+OK    arm looks healthy
+ERROR [JOINT_STATES_STALE] /joint_states silent for 4.1s (controller manager or joint_state_broadcaster is down)
+ERROR [JOINT_STATES_STALE] /joint_states silent for 6.3s (controller manager or joint_state_broadcaster is down)

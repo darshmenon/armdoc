@@ -60,16 +60,30 @@ def test_effort_saturation_needs_duration():
     assert "EFFORT_SAT" not in codes(evaluate(s, 4.0))
 
 
-def test_inactive_controller_and_conflict():
+def test_inactive_controller():
     s = state()
     feed_joints(s, 29.9, ["j1"], [0.0], [0.0], [0.0])
     s.controllers = [("arm_controller", "joint_trajectory_controller/JointTrajectoryController", "inactive"),
                      ("jsb", "joint_state_broadcaster/JointStateBroadcaster", "active")]
     out = codes(evaluate(s, 30.0))
     assert {"CTRL_INACTIVE", "NO_ACTIVE_ARM_CTRL"} <= out
-    s.controllers = [("a", "joint_trajectory_controller/JointTrajectoryController", "active"),
-                     ("b", "effort_controllers/JointGroupEffortController", "active")]
-    assert "CTRL_CONFLICT" in codes(evaluate(s, 30.0))
+
+
+def test_gripper_controller_is_not_an_arm_controller():
+    s = state()
+    feed_joints(s, 29.9, ["j1"], [0.0], [0.0], [0.0])
+    s.controllers = [("arm_controller", "joint_trajectory_controller/JointTrajectoryController", "active"),
+                     ("gripper_controller", "position_controllers/GripperActionController", "inactive")]
+    assert codes(evaluate(s, 30.0)) == set()
+
+
+def test_limit_checks_only_cover_arm_joints():
+    s = state()
+    s.arm_joints = {"j2"}
+    feed_joints(s, 1.0, ["j1", "j2"], [3.0, 0.0], [0.0, 0.0], [0.0, 0.0])
+    assert evaluate(s, 1.0) == []
+    s.arm_joints = {"j1"}
+    assert "LIMIT_POS" in codes(evaluate(s, 1.0))
 
 
 def test_tracking_error_sustained():

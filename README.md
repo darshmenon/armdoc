@@ -13,24 +13,27 @@ ERROR [CTRL_INACTIVE] controller arm_controller (joint_trajectory_controller/Joi
 ERROR [TRAJ_STALLED] a trajectory goal has been active for 10s but the joints moved 0.0000 rad
 ```
 
+![armdoc on a UR3 in Gazebo](docs/ur3_gazebo.png)
+
+*Real output from a UR3 in Gazebo: healthy, then the arm controller deactivated, then the sim paused while armdoc was attached. Source: `docs/ur3_gazebo_demo.txt`, `docs/make_screenshot.py`.*
+
 ## What it checks
 
 | Code | Level | Means |
 |---|---|---|
-| `JOINT_STATES_NONE` / `JOINT_STATES_STALE` | warn / error | no `/joint_states`, or it went silent (broadcaster or controller manager down) |
+| `JOINT_STATES_NONE` / `JOINT_STATES_STALE` | error | no `/joint_states`, or it went silent (broadcaster or controller manager down) |
 | `JOINT_NAN` | error | a joint position is NaN/inf (diverged controller) |
 | `NEAR_LIMIT` / `LIMIT_POS` | warn / error | within 1% of a URDF joint limit, or outside it |
 | `LIMIT_VEL` | warn | joint faster than its URDF velocity limit |
 | `EFFORT_SAT` | warn | a joint pinned at its effort limit for 2 s (contact or payload) |
 | `NO_CONTROLLER_MANAGER` | warn | `list_controllers` does not answer |
 | `CTRL_INACTIVE` / `NO_ACTIVE_ARM_CTRL` | error | an arm controller is not active, or none is |
-| `CTRL_CONFLICT` | warn | several arm controllers active at once |
 | `NO_MOVE_GROUP` | error | `--moveit` and no `move_group` node |
 | `TRACKING_ERROR` | warn | trajectory controller error above 0.05 rad for 3 s |
 | `TRAJ_STALLED` | error | a `follow_joint_trajectory` goal is executing but the joints are not moving |
 | `GOAL_ABORTS` | warn | 3 or more trajectory goals aborted or cancelled within 30 s |
 
-Limits come from `/robot_description`. Missing-thing checks wait out a startup grace (`--grace`, 20 s).
+Limits come from `/robot_description`, and are checked only for joints that arm controllers claim (grippers and broadcasters are skipped). Missing-thing checks wait out a startup grace (`--grace`, 20 s).
 
 ## Try it without a robot
 
@@ -44,6 +47,6 @@ python3 -m pytest test                               # the diagnosis rules, no R
 
 ## Limits
 
-- Humble tested. Controller state topics assume `<controller>/state` (`JointTrajectoryControllerState`).
+- Verified on Humble against a live UR3 Gazebo sim (ros2_control, `arm_controller` + `gripper_controller`). Controller state topics assume `<controller>/state` (`JointTrajectoryControllerState`).
 - One arm per run; use `--ns` for each.
 - Text or `--json` output only, no `/diagnostics` yet.

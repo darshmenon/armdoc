@@ -9,12 +9,13 @@ import rclpy
 from action_msgs.msg import GoalStatusArray
 from control_msgs.msg import JointTrajectoryControllerState
 from controller_manager_msgs.srv import ListControllers
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
-from armdoc.core import Config, State, evaluate, feed_joints, parse_limits
+from armdoc.core import Config, State, evaluate, feed_joints, is_arm_controller, parse_limits
 
 EXECUTING, ABORTED, CANCELED = 2, 6, 5
 
@@ -77,6 +78,9 @@ class ArmDoc(Node):
                 res = self.pending.result()
                 self.s.controllers = [(c.name, c.type, c.state) for c in res.controller]
                 self.s.cm_missing = False
+                claimed = {i.rsplit("/", 1)[0] for c in res.controller if is_arm_controller(c.name, c.type)
+                           for i in c.claimed_interfaces}
+                self.s.arm_joints = claimed or None
                 for name, typ, _ in self.s.controllers:
                     if "joint_trajectory" in typ and name not in self.subscribed:
                         self.subscribed.add(name)
@@ -137,10 +141,11 @@ def main(argv=None):
             if a.once is not None:
                 code = 1 if any(x.level == "ERROR" for x in f) else 0
                 break
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     node.destroy_node()
-    rclpy.shutdown()
+    if rclpy.ok():
+        rclpy.shutdown()
     return code
 
 

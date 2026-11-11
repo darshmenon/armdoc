@@ -1,0 +1,30 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.10'}
+      - run: pip install pytest && python -m pytest -q test/test_core.py
+  fake-arm:
+    runs-on: ubuntu-latest
+    container: ros:humble-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        shell: bash
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq ros-humble-control-msgs ros-humble-controller-manager-msgs ros-humble-diagnostic-msgs python3-pytest
+      - name: armdoc catches a stalled trajectory
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          export ROS_DOMAIN_ID=81 PYTHONPATH=$PWD
+          python3 test/fake_arm.py --stall & sleep 2
+          set +e
+          out=$(python3 -m armdoc.doctor --once 12 --stall-time 4); code=$?
+          echo "$out"
+          [ "$code" = 1 ] && echo "$out" | grep -q TRAJ_STALLED

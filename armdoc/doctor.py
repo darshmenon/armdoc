@@ -11,6 +11,7 @@ from control_msgs.msg import JointTrajectoryControllerState
 from controller_manager_msgs.srv import ListControllers
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.utilities import remove_ros_args
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
@@ -23,45 +24,87 @@ EXECUTING, ABORTED, CANCELED = 2, 6, 5
 
 
 class ArmDoc(Node):
-    def __init__(self, ns, moveit, cfg):
+    """Parameters (ros2 launch / --params-file) override the matching CLI flags: ns, moveit, stale, grace,
+    track_err, stall_time, noise_rad, lag_max, period, hints, diagnostics."""
+
+    def __init__(self, a):
         super().__init__("armdoc")
-        self.cfg, self.ns, self.moveit = cfg, ns.rstrip("/"), moveit
+        d = self.declare_parameter
+        p = lambda name, default: d(name, default).value
+        self.ns = str(p("ns", a.ns)).rstrip("/")
+        self.moveit = bool(p("moveit", a.moveit))
+        self.period = float(p("period", a.period))
+        self.hints = bool(p("hints", a.hints)) or a.ready is not None
+        self.diagnostics = bool(p("diagnostics", a.diagnostics))
+        grace = float(p("grace", a.grace))
+        if a.once is not None:
+            grace = min(grace, a.once * 0.6)
+        self.cfg = Config(stale=float(p("stale", a.stale)), grace=grace, track_err=float(p("track_err", a.track_err)),
+                          stall_time=float(p("stall_time", a.stall_time)), noise_rad=float(p("noise_rad", a.noise_rad)),
+                          lag_max=float(p("lag_max", a.lag_max)))
         self.s = State(t0=self.now())
         self.seen_goals = {}
+        self.baselined = set()
         self.subscribed = set()
         self.create_subscription(JointState, f"{self.ns}/joint_states", self.on_js, qos_profile_sensor_data)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
         self.create_subscription(String, f"{self.ns}/robot_description", self.on_urdf, latched)
         self.cli = self.create_client(ListControllers, f"{self.ns}/controller_manager/list_controllers")
         self.pending = None
-        if moveit:
-            self.watch_status(f"{self.ns}/move_action/_action/status", False)
+        if self.moveit:
+            self.watch_status(f"{self.ns}/move_action/_action/status", False, moveit=True)
         self.create_timer(1.0, self.poll)
 
     def now(self):
         return time.monotonic()
 
     def on_js(self, m):
-        feed_joints(self.s, self.now(), m.name, m.position, m.velocity, m.effort)
+        lag = None
+        st = m.header.stamp
+        if st.sec or st.nanosec:
+            d = self.get_clock().now().nanoseconds * 1e-9 - (st.sec + st.nanosec * 1e-9)
+            if abs(d) < 1e4:       # a huge gap means the stamps use another clock (sim time vs wall): no verdict
+                lag = d
+        feed_joints(self.s, self.now(), m.name, m.position, m.velocity, m.effort, lag=lag)
 
     def on_urdf(self, m):
         self.s.limits = parse_limits(m.data)
 
-    def watch_status(self, topic, motion):
+    def watch_status(self, topic, motion, moveit=False):
         if topic in self.subscribed:
             return
         self.subscribed.add(topic)
-        self.create_subscription(GoalStatusArray, topic, lambda m, k=topic: self.on_status(k, m, motion), 10)
+        self.create_subscription(GoalStatusArray, topic, lambda m, k=topic: self.on_status(k, m, motion, moveit), 10)
 
-    def on_status(self, key, m, motion):
+    def goal_age(self, g):
+        """Seconds since the goal was accepted, from its stamp; None when unusable (no stamp, or another clock)."""
+        st = g.goal_info.stamp
+        if not (st.sec or st.nanosec):
+            return None
+        age = self.get_clock().now().nanoseconds * 1e-9 - (st.sec + st.nanosec * 1e-9)
+        return age if abs(age) < 1e4 else None
+
+    def on_status(self, key, m, motion, moveit):
         now = self.now()
+        first = key not in self.baselined
+        self.baselined.add(key)
         active = False
         for g in m.status_list:
             gid = bytes(g.goal_info.goal_id.uuid)
             if g.status == EXECUTING:
                 active = active or motion
-            if g.status in (ABORTED, CANCELED) and self.seen_goals.get(gid) != g.status:
-                self.s.aborts.append(now)
+            changed = self.seen_goals.get(gid) != g.status
+            # A status list carries recent history. In the first list we saw, a goal that already finished only counts
+            # when its stamp says it is brand new (a fast failure); later lists only count real transitions.
+            fresh = not first
+            if first and changed:
+                age = self.goal_age(g)
+                fresh = age is not None and -1.0 <= age <= 5.0
+            if changed and fresh:
+                if moveit and g.status == ABORTED:
+                    self.s.moveit_aborts.append(now)
+                elif not moveit and g.status in (ABORTED, CANCELED):
+                    self.s.aborts.append(now)
             self.seen_goals[gid] = g.status
         if motion:
             if active and self.s.goal_active_since is None:
@@ -99,6 +142,10 @@ class ArmDoc(Node):
                 self.s.cm_missing = True
         if self.moveit:
             self.s.moveit_nodes = any(n == "move_group" for n, _ in self.get_node_names_and_namespaces())
+            if self.s.moveit_nodes:
+                served = {n for n, _ in self.get_service_names_and_types()}
+                self.s.planning_scene = (bool(self.get_publishers_info_by_topic(f"{self.ns}/monitored_planning_scene"))
+                                         or f"{self.ns}/get_planning_scene" in served)
 
     def enable_diagnostics(self):
         from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
@@ -128,6 +175,8 @@ def main(argv=None):
     if argv and argv[0] == "report":
         from armdoc.report import main as report_main
         return report_main(argv[1:])
+    ros_argv = list(argv)                                   # kept whole for rclpy (--ros-args, --params-file, remaps)
+    argv = remove_ros_args(args=["armdoc"] + ros_argv)[1:]  # argparse only sees armdoc's own flags
     ap = argparse.ArgumentParser(prog="armdoc", description="Why isn't my arm moving? Read-only diagnosis of a "
                                  "ros2_control / MoveIt 2 arm.")
     ap.add_argument("--ns", default="", help="namespace of the arm (e.g. /ur3)")
@@ -147,14 +196,17 @@ def main(argv=None):
     ap.add_argument("--stale", type=float, default=2.0)
     ap.add_argument("--track-err", type=float, default=0.05, help="tracking error (rad) that warns")
     ap.add_argument("--stall-time", type=float, default=5.0)
+    ap.add_argument("--noise-rad", type=float, default=Config.noise_rad,
+                    help="estimated position noise (rad) that raises NOISY_JOINTS")
+    ap.add_argument("--lag-max", type=float, default=Config.lag_max,
+                    help="seconds between a joint_states stamp and its arrival that raise STREAM_LAG "
+                         "(needs use_sim_time:=true when the stamps are sim time)")
     a = ap.parse_args(argv)
     if a.ready is not None:
-        a.once, a.hints = a.ready, True
-    cfg = Config(stale=a.stale, grace=a.grace if not a.once else min(a.grace, a.once * 0.6),
-                 track_err=a.track_err, stall_time=a.stall_time)
-    rclpy.init()
-    node = ArmDoc(a.ns, a.moveit, cfg)
-    if a.diagnostics:
+        a.once = a.ready
+    rclpy.init(args=["armdoc"] + ros_argv)
+    node = ArmDoc(a)
+    if node.diagnostics:
         node.enable_diagnostics()
     start = last = time.monotonic()
     code = 0
@@ -167,7 +219,7 @@ def main(argv=None):
             if rec:
                 t = now - start
                 rec.joints(t, {n: v[0] for n, v in node.s.joints.items()} if node.s.joint_t is not None
-                           and now - node.s.joint_t <= a.stale else None)
+                           and now - node.s.joint_t <= node.cfg.stale else None)
                 if now - last_eval >= 1.0:       # evaluate once a second for the timeline, whatever --period is
                     last_eval = now
                     if not rec.has_limits and node.s.limits:
@@ -176,17 +228,17 @@ def main(argv=None):
             if a.once is not None:
                 if now - start < a.once:
                     continue
-            elif now - last < a.period:
+            elif now - last < node.period:
                 continue
             last = now
             f = node.report()
             if a.json:
                 print(json.dumps([x.__dict__ for x in f]), flush=True)
             else:
-                print(format_findings(f, a.hints), flush=True)
+                print(format_findings(f, node.hints), flush=True)
                 if a.ready is not None:
                     print(verdict_line(f), flush=True)
-            if a.diagnostics:
+            if node.diagnostics:
                 node.publish_diagnostics(f)
             if a.once is not None:
                 code = 1 if any(x.level == "ERROR" for x in f) else 0
@@ -195,9 +247,12 @@ def main(argv=None):
         pass
     if rec:
         rec.close()
-    node.destroy_node()
-    if rclpy.ok():
-        rclpy.shutdown()
+    try:                                       # a second Ctrl-C (a terminal sends it to the whole launch group) is fine
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+    except (KeyboardInterrupt, ExternalShutdownException, Exception):
+        pass
     return code
 
 

@@ -5,6 +5,9 @@
   fake_arm.py --freeze   joint_states stop after 3 s
   fake_arm.py --inactive arm controller is reported inactive
   fake_arm.py --stall    a trajectory goal is "executing" but the joints never move
+  fake_arm.py --moveit   also a fake move_group node (with a planning scene topic)
+  fake_arm.py --moveit --no-scene   move_group without any planning scene
+  fake_arm.py --moveit --plan-fail  a MoveIt goal is aborted 4 s in (an old aborted one is there from the start)
 """
 import argparse
 import math
@@ -15,6 +18,7 @@ from action_msgs.msg import GoalStatus, GoalStatusArray
 from controller_manager_msgs.msg import ControllerState
 from controller_manager_msgs.srv import ListControllers
 from rclpy.node import Node
+from rclpy.time import Time
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
@@ -29,6 +33,9 @@ def main():
     ap.add_argument("--freeze", action="store_true")
     ap.add_argument("--inactive", action="store_true")
     ap.add_argument("--stall", action="store_true")
+    ap.add_argument("--moveit", action="store_true")
+    ap.add_argument("--no-scene", action="store_true")
+    ap.add_argument("--plan-fail", action="store_true")
     a = ap.parse_args()
     rclpy.init()
     n = Node("fake_arm")
@@ -60,6 +67,38 @@ def main():
             g.status_list = [s]
             st.publish(g)
     n.create_timer(0.02, tick)
+
+    if a.moveit:
+        import uuid
+        from rclpy.executors import MultiThreadedExecutor  # noqa: F401  (single executor is enough: same process)
+        mg = Node("move_group")                   # armdoc only needs a node of this name on the graph
+        if not a.no_scene:
+            mg.create_publisher(String, "/monitored_planning_scene", 10)
+        latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        mv = mg.create_publisher(GoalStatusArray, "/move_action/_action/status", latched)
+
+        def goal(code, age=0.0):
+            g = GoalStatus(status=code)
+            g.goal_info.goal_id.uuid = list(uuid.uuid4().bytes)
+            g.goal_info.stamp = Time(nanoseconds=int(mg.get_clock().now().nanoseconds - age * 1e9)).to_msg()
+            return g
+        old = goal(GoalStatus.STATUS_ABORTED, age=600.0)   # history from before armdoc attached: must not count
+        mv.publish(GoalStatusArray(status_list=[old] if a.plan_fail else []))
+        fired = []
+
+        def maybe_fail():
+            if a.plan_fail and not fired and time.monotonic() - t0 > 4.0:
+                fired.append(1)
+                mv.publish(GoalStatusArray(status_list=[old, goal(GoalStatus.STATUS_ABORTED)]))
+        mg.create_timer(0.2, maybe_fail)
+        ex = MultiThreadedExecutor()
+        ex.add_node(n)
+        ex.add_node(mg)
+        try:
+            ex.spin()
+        except (KeyboardInterrupt, Exception):
+            pass
+        return
     try:
         rclpy.spin(n)
     except (KeyboardInterrupt, Exception):

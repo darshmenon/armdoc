@@ -1,0 +1,10 @@
+MoveIt checks against test/fake_arm.py (a fake move_group node on the graph, no MoveIt installed), ROS_DOMAIN_ID=86.
+armdoc --moveit --once 10 --grace 3
+
+fake_arm.py --moveit               OK    arm looks healthy
+fake_arm.py --moveit --no-scene    WARN  [NO_PLANNING_SCENE] move_group is running but no planning scene is being published or served; ...
+fake_arm.py --moveit --plan-fail   WARN  [MOVEIT_PLAN_FAILED] 1 MoveIt request(s) aborted in the last 30s (planning or execution failed)
+fake_arm.py                        ERROR [NO_MOVE_GROUP] no move_group node on the graph; MoveIt requests will time out
+
+--plan-fail publishes an old aborted goal (stamped 10 minutes ago, history) and one new aborted goal 4 s in:
+only the new one is counted.

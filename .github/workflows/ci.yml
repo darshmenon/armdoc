@@ -7,7 +7,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.10'}
-      - run: pip install pytest && python -m pytest -q test/test_core.py
+      - run: pip install pytest && python -m pytest -q test/test_core.py test/test_checks.py
   fake-arm:
     runs-on: ubuntu-latest
     container: ros:humble-ros-base
@@ -28,3 +28,14 @@ jobs:
           out=$(python3 -m armdoc.doctor --once 12 --stall-time 4); code=$?
           echo "$out"
           [ "$code" = 1 ] && echo "$out" | grep -q TRAJ_STALLED
+      - name: armdoc names MoveIt problems
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          export ROS_DOMAIN_ID=82 PYTHONPATH=$PWD:$PYTHONPATH
+          for mode in "--moveit --no-scene:NO_PLANNING_SCENE" "--moveit --plan-fail:MOVEIT_PLAN_FAILED"; do
+            python3 test/fake_arm.py ${mode%%:*} & pid=$!; sleep 2
+            out=$(python3 -m armdoc.doctor --moveit --once 10 --grace 3); echo "$out"
+            kill $pid; wait $pid 2>/dev/null || true
+            echo "$out" | grep -q "${mode##*:}"
+          done

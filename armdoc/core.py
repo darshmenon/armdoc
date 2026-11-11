@@ -175,3 +175,44 @@ def evaluate(s, now, c=Config()):
         f.append(Finding(WARN, "GOAL_ABORTS", f"{len(s.aborts)} trajectory goals aborted or cancelled in "
                          f"{c.abort_window:.0f}s (check limits, collisions and controller tolerances)"))
     return f
+
+
+HINTS = {
+    "JOINT_STATES_NONE": "start joint_state_broadcaster (ros2 control load_controller --set-state active joint_state_broadcaster)",
+    "JOINT_STATES_STALE": "check the controller manager and that the simulator is not paused",
+    "JOINT_NAN": "restart the controller; lower gains or the control period if it diverged",
+    "NEAR_LIMIT": "move the arm away from the joint limit before planning",
+    "LIMIT_POS": "the arm is outside its URDF limits; reset the joint or widen the limit",
+    "LIMIT_VEL": "slow the trajectory (velocity scaling) or raise the URDF velocity limit",
+    "EFFORT_SAT": "something is blocking the joint, or the payload is too heavy",
+    "NO_CONTROLLER_MANAGER": "start ros2_control_node, or pass --ns for a namespaced arm",
+    "CTRL_INACTIVE": "ros2 control set_controller_state <name> active",
+    "NO_ACTIVE_ARM_CTRL": "activate an arm controller (ros2 control list_controllers shows the state)",
+    "NO_MOVE_GROUP": "launch move_group, or drop --moveit",
+    "TRACKING_ERROR": "raise controller gains, check for collisions, or slow the path",
+    "TRAJ_STALLED": "the controller accepted the goal but the joints do not move; check hardware or sim and the goal tolerances",
+    "GOAL_ABORTS": "check joint limits, collisions and goal_time / path tolerances in the controller config",
+}
+
+
+def verdict(findings):
+    """READY when nothing blocks motion; the second item names blocking codes and warnings."""
+    errors = [x.code for x in findings if x.level == ERROR]
+    warns = [x.code for x in findings if x.level == WARN]
+    return (not errors), errors, warns
+
+
+def verdict_line(findings):
+    ok, errors, warns = verdict(findings)
+    if not ok:
+        return f"NOT READY - {len(errors)} blocking: {', '.join(errors)}"
+    return "READY" + (f" - {len(warns)} warning(s): {', '.join(warns)}" if warns else "")
+
+
+def format_findings(findings, hints=False):
+    out = []
+    for x in findings:
+        out.append(str(x))
+        if hints and x.code in HINTS:
+            out.append(f"        -> {HINTS[x.code]}")
+    return "\n".join(out) if out else "OK    arm looks healthy"

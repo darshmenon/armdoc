@@ -15,7 +15,9 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profi
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
-from armdoc.core import Config, State, evaluate, feed_joints, is_arm_controller, parse_limits
+from armdoc.record import Recorder
+from armdoc.core import (Config, State, evaluate, feed_joints, format_findings, is_arm_controller, parse_limits,
+                         verdict_line)
 
 EXECUTING, ABORTED, CANCELED = 2, 6, 5
 
@@ -98,33 +100,79 @@ class ArmDoc(Node):
         if self.moveit:
             self.s.moveit_nodes = any(n == "move_group" for n, _ in self.get_node_names_and_namespaces())
 
+    def enable_diagnostics(self):
+        from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+        self._dm = (DiagnosticArray, DiagnosticStatus, KeyValue)
+        self.diag_pub = self.create_publisher(DiagnosticArray, "/diagnostics", 10)
+
+    def publish_diagnostics(self, findings):
+        DiagnosticArray, DiagnosticStatus, KeyValue = self._dm
+        arr = DiagnosticArray()
+        arr.header.stamp = self.get_clock().now().to_msg()
+        for x in findings or [None]:
+            st = DiagnosticStatus(name=f"armdoc: {x.code if x else 'arm'}", hardware_id=self.ns or "arm")
+            if x is None:
+                st.level, st.message = DiagnosticStatus.OK, "arm looks healthy"
+            else:
+                st.level = DiagnosticStatus.ERROR if x.level == "ERROR" else DiagnosticStatus.WARN
+                st.message = x.msg
+            arr.status.append(st)
+        self.diag_pub.publish(arr)
+
     def report(self):
         return evaluate(self.s, self.now(), self.cfg)
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "report":
+        from armdoc.report import main as report_main
+        return report_main(argv[1:])
     ap = argparse.ArgumentParser(prog="armdoc", description="Why isn't my arm moving? Read-only diagnosis of a "
                                  "ros2_control / MoveIt 2 arm.")
     ap.add_argument("--ns", default="", help="namespace of the arm (e.g. /ur3)")
     ap.add_argument("--moveit", action="store_true", help="also require a running move_group")
     ap.add_argument("--once", type=float, metavar="SECONDS", help="watch this long, print one report, exit 1 on ERROR")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--hints", action="store_true", help="print a suggested next step under each finding")
+    ap.add_argument("--ready", nargs="?", type=float, const=10.0, default=None, metavar="SECS",
+                    help="pre-flight: watch SECS (default 10), print hints and a READY / NOT READY verdict; "
+                         "exit 1 if not ready")
+    ap.add_argument("--diagnostics", action="store_true",
+                    help="also publish findings to /diagnostics (the only thing armdoc ever publishes; off by default)")
+    ap.add_argument("--record", metavar="FILE.jsonl", help="log timestamped joint positions and findings to a JSONL file; "
+                    "turn it into a timeline with `armdoc report FILE.jsonl --html report.html`")
     ap.add_argument("--period", type=float, default=2.0)
     ap.add_argument("--grace", type=float, default=20.0)
     ap.add_argument("--stale", type=float, default=2.0)
     ap.add_argument("--track-err", type=float, default=0.05, help="tracking error (rad) that warns")
     ap.add_argument("--stall-time", type=float, default=5.0)
     a = ap.parse_args(argv)
+    if a.ready is not None:
+        a.once, a.hints = a.ready, True
     cfg = Config(stale=a.stale, grace=a.grace if not a.once else min(a.grace, a.once * 0.6),
                  track_err=a.track_err, stall_time=a.stall_time)
     rclpy.init()
     node = ArmDoc(a.ns, a.moveit, cfg)
+    if a.diagnostics:
+        node.enable_diagnostics()
     start = last = time.monotonic()
     code = 0
+    rec = Recorder(a.record, a.ns) if a.record else None
+    last_eval = -1e9
     try:
         while rclpy.ok():
             rclpy.spin_once(node, timeout_sec=0.2)
             now = time.monotonic()
+            if rec:
+                t = now - start
+                rec.joints(t, {n: v[0] for n, v in node.s.joints.items()} if node.s.joint_t is not None
+                           and now - node.s.joint_t <= a.stale else None)
+                if now - last_eval >= 1.0:       # evaluate once a second for the timeline, whatever --period is
+                    last_eval = now
+                    if not rec.has_limits and node.s.limits:
+                        rec.set_limits(node.s.limits)
+                    rec.findings(t, node.report(), node.s.controllers)
             if a.once is not None:
                 if now - start < a.once:
                     continue
@@ -134,15 +182,19 @@ def main(argv=None):
             f = node.report()
             if a.json:
                 print(json.dumps([x.__dict__ for x in f]), flush=True)
-            elif f:
-                print("\n".join(str(x) for x in f), flush=True)
             else:
-                print("OK    arm looks healthy", flush=True)
+                print(format_findings(f, a.hints), flush=True)
+                if a.ready is not None:
+                    print(verdict_line(f), flush=True)
+            if a.diagnostics:
+                node.publish_diagnostics(f)
             if a.once is not None:
                 code = 1 if any(x.level == "ERROR" for x in f) else 0
                 break
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    if rec:
+        rec.close()
     node.destroy_node()
     if rclpy.ok():
         rclpy.shutdown()

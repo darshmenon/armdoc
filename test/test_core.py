@@ -1,6 +1,7 @@
 import math
 
-from armdoc.core import Config, State, evaluate, feed_joints, parse_limits
+from armdoc.core import (HINTS, Config, Finding, State, evaluate, feed_joints, format_findings, parse_limits, verdict,
+                         verdict_line)
 
 URDF = """<robot name="r"><link name="a"/><link name="b"/>
 <joint name="j1" type="revolute"><parent link="a"/><child link="b"/><limit lower="-1" upper="1" velocity="2" effort="10"/></joint>
@@ -119,3 +120,24 @@ def test_missing_move_group():
     s.moveit_nodes = False
     assert "NO_MOVE_GROUP" not in codes(evaluate(s, 5.0))
     assert "NO_MOVE_GROUP" in codes(evaluate(s, 30.0))
+
+
+def test_verdict_ready_and_not_ready():
+    assert verdict([]) == (True, [], [])
+    assert verdict_line([]) == "READY"
+    w = [Finding("WARN", "NEAR_LIMIT", "x")]
+    assert verdict_line(w) == "READY - 1 warning(s): NEAR_LIMIT"
+    e = w + [Finding("ERROR", "CTRL_INACTIVE", "y")]
+    assert verdict(e)[0] is False
+    assert verdict_line(e) == "NOT READY - 1 blocking: CTRL_INACTIVE"
+
+
+def test_hints_cover_every_code_and_format_adds_them():
+    import re
+    import armdoc.core as core
+    emitted = set(re.findall(r'Finding\((?:ERROR|WARN), "([A-Z_]+)"', open(core.__file__).read()))
+    assert emitted <= set(HINTS), emitted - set(HINTS)
+    out = format_findings([Finding("ERROR", "CTRL_INACTIVE", "y")], hints=True)
+    assert "-> ros2 control set_controller_state" in out
+    assert "->" not in format_findings([Finding("ERROR", "CTRL_INACTIVE", "y")])
+    assert format_findings([]) == "OK    arm looks healthy"

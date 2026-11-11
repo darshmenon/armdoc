@@ -1,0 +1,15 @@
+New checks validated with armchaos (not modified) on the fake arm, ROS_DOMAIN_ID=86, armdoc reporting every 1 s.
+Each fault starts 6 s into a run and lasts 8 s; "baseline" is every report before the fault started.
+
+fault NOISY_JOINTS: baseline reports before fault = ['OK']
+  first NOISY_JOINTS +0.5s after the fault started   (noise sigma=0.02 rad; armdoc estimated 0.018 to 0.025 rad)
+  back to OK +1.6s after the fault ended
+  codes seen during the fault: ['NOISY_JOINTS']
+fault STREAM_LAG: baseline reports before fault = ['OK']
+  first STREAM_LAG +3.5s after the fault started      (lag delay=3 s: the first 3 s are silent, so JOINT_STATES_STALE comes first)
+  back to OK +1.5s after the fault ended
+  codes seen during the fault: ['JOINT_STATES_STALE', 'NOISY_JOINTS', 'OK', 'STREAM_LAG']
+
+Note: the single NOISY_JOINTS inside the lag fault comes from the moment the lag ends, when the positions jump from
+3-second-old values to current ones. That is a real discontinuity in the data and it clears on the next report.
+See e2e_lag_timeline.txt for the full timeline.

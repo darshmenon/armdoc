@@ -1,0 +1,26 @@
+armchaos inject lag delay=3 --at 6 --for 8 on test/fake_arm.py, armdoc watching /joint_states_chaos (ROS_DOMAIN_ID=86)
+seconds are relative to the fault start; the last JOINT_STATES_STALE is armchaos ending its relay
+
+  -5.0s  OK    arm looks healthy
+  -3.9s  OK    arm looks healthy
+  -2.9s  OK    arm looks healthy
+  -1.9s  OK    arm looks healthy
+  -0.9s  OK    arm looks healthy
+  +0.2s  OK    arm looks healthy
+  +1.2s  OK    arm looks healthy
+  +2.4s  ERROR [JOINT_STATES_STALE] /joint_states silent for 2.4s (controller manager or joint_state_broadcaster is down)
+  +3.5s  WARN  [STREAM_LAG] /joint_states arrive 3.01s after their header stamp (limit 0.5s): controllers and planners see old data
+  +4.5s  WARN  [STREAM_LAG] /joint_states arrive 3.01s after their header stamp (limit 0.5s): controllers and planners see old data
+  +5.5s  WARN  [STREAM_LAG] /joint_states arrive 3.01s after their header stamp (limit 0.5s): controllers and planners see old data
+  +6.5s  WARN  [STREAM_LAG] /joint_states arrive 3.01s after their header stamp (limit 0.5s): controllers and planners see old data
+  +7.5s  WARN  [STREAM_LAG] /joint_states arrive 3.01s after their header stamp (limit 0.5s): controllers and planners see old data
+  +8.5s  WARN  [NOISY_JOINTS] j1 position jitter is about 0.1528 rad (and 2 more), above 0.002 rad (encoder or driver noise, or a loose connection)
+  +8.5s  WARN  [STREAM_LAG] /joint_states arrive 3.01s after their header stamp (limit 0.5s): controllers and planners see old data
+  +9.5s  OK    arm looks healthy
+ +10.5s  OK    arm looks healthy
+ +11.5s  OK    arm looks healthy
+ +12.5s  OK    arm looks healthy
+ +13.5s  OK    arm looks healthy
+ +14.7s  OK    arm looks healthy
+ +15.8s  OK    arm looks healthy
+ +17.0s  ERROR [JOINT_STATES_STALE] /joint_states silent for 2.5s (controller manager or joint_state_broadcaster is down)

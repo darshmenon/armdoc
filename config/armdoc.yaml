@@ -1,0 +1,12 @@
+# Thresholds for armdoc. ros2 launch armdoc armdoc.launch.py params_file:=/path/to/your.yaml
+# The namespace, moveit, diagnostics and use_sim_time options are launch arguments, not set here.
+armdoc:
+  ros__parameters:
+    period: 2.0          # seconds between live reports
+    hints: true          # print a suggested next step under each finding
+    stale: 2.0           # s without joint_states before JOINT_STATES_STALE
+    grace: 20.0          # s after start before missing things (controllers, move_group) are errors
+    track_err: 0.05      # rad of trajectory tracking error that warns
+    stall_time: 5.0      # s a goal may be active with no joint motion before TRAJ_STALLED
+    noise_rad: 0.002     # estimated position noise (rad) that raises NOISY_JOINTS
+    lag_max: 0.5         # s between a joint_states stamp and its arrival that raise STREAM_LAG

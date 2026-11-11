@@ -31,6 +31,14 @@ class Config:
     stall_dist: float = 0.005     # rad
     abort_count: int = 3
     abort_window: float = 30.0
+    noise_rad: float = 0.002      # estimated per-sample position noise (rad) that counts as noisy
+    noise_window: float = 1.0     # s of joint_states used for the noise estimate
+    noise_min_samples: int = 10
+    noise_max_dt: float = 0.05    # skip the noise check below 20 Hz: coarse sampling aliases real motion
+    lag_max: float = 0.5          # s between a joint_states header stamp and its arrival
+    lag_window: float = 2.0
+    moveit_abort_count: int = 1   # aborted /move_action goals inside moveit_window that raise MOVEIT_PLAN_FAILED
+    moveit_window: float = 30.0
 
 
 @dataclass
@@ -48,6 +56,9 @@ class State:
     goal_active_since: float = None
     pos_hist: deque = field(default_factory=lambda: deque(maxlen=4000))
     aborts: deque = field(default_factory=deque)
+    lag_hist: deque = field(default_factory=lambda: deque(maxlen=2000))   # (receive time, header-stamp lag in s)
+    moveit_aborts: deque = field(default_factory=deque)                    # receive times of aborted /move_action goals
+    planning_scene: bool = None                       # None = unknown; False = move_group is up but no scene is served
     eff_sat_since: dict = field(default_factory=dict)
 
 
@@ -68,8 +79,11 @@ def parse_limits(urdf_xml):
     return out
 
 
-def feed_joints(s, now, names, pos, vel, eff):
+def feed_joints(s, now, names, pos, vel, eff, lag=None):
+    """Record one joint_states sample. `lag` is receive time minus header stamp in seconds, when known."""
     s.joint_t = now
+    if lag is not None and math.isfinite(lag):
+        s.lag_hist.append((now, lag))
     for i, n in enumerate(names):
         g = lambda a: a[i] if i < len(a) else float("nan")
         s.joints[n] = (g(pos), g(vel), g(eff))
@@ -87,6 +101,37 @@ def _moved(s, now, window):
         return None
     cur = s.pos_hist[-1][1]
     return max((abs(cur[n] - old[n]) for n in cur if n in old), default=0.0)
+
+
+def estimate_noise(s, now, c, joints=None):
+    """Per-joint position noise (rad, one sigma) from the fourth difference over the last `noise_window` seconds.
+
+    For white noise of sigma e the fourth difference (1, -4, 6, -4, 1) has variance 70 e^2, while smooth motion (even a
+    fast acceleration) cancels out of it, so this separates jitter from movement. Samples are treated as evenly spaced.
+    Returns {} when there are too few samples or the stream is too slow (`noise_max_dt`).
+    """
+    win = [(t, p) for t, p in s.pos_hist if t >= now - c.noise_window]
+    if len(win) < max(c.noise_min_samples, 6):
+        return {}
+    dts = sorted(win[i + 1][0] - win[i][0] for i in range(len(win) - 1))
+    if not dts or dts[len(dts) // 2] > c.noise_max_dt:
+        return {}
+    out = {}
+    for n in win[-1][1]:
+        if joints is not None and n not in joints:
+            continue
+        xs = [p.get(n, math.nan) for _, p in win]
+        acc, k = 0.0, 0
+        for i in range(len(xs) - 4):
+            a, b, d, e, g = xs[i:i + 5]
+            if not all(math.isfinite(v) for v in (a, b, d, e, g)):
+                continue
+            h = a - 4 * b + 6 * d - 4 * e + g
+            acc += h * h
+            k += 1
+        if k >= 5:
+            out[n] = math.sqrt(acc / k / 70.0)
+    return out
 
 
 def is_arm_controller(name, typ):
@@ -138,6 +183,18 @@ def evaluate(s, now, c=Config()):
             else:
                 s.eff_sat_since.pop(n, None)
 
+    if live:
+        noisy = {n: v for n, v in estimate_noise(s, now, c, s.arm_joints).items() if v > c.noise_rad}
+        if noisy:
+            n, v = max(noisy.items(), key=lambda kv: kv[1])
+            more = f" (and {len(noisy) - 1} more)" if len(noisy) > 1 else ""
+            f.append(Finding(WARN, "NOISY_JOINTS", f"{n} position jitter is about {v:.4f} rad{more}, above "
+                             f"{c.noise_rad:g} rad (encoder or driver noise, or a loose connection)"))
+        recent = sorted(l for t, l in s.lag_hist if t >= now - c.lag_window)
+        if len(recent) >= 3 and recent[len(recent) // 2] > c.lag_max:
+            f.append(Finding(WARN, "STREAM_LAG", f"/joint_states arrive {recent[len(recent) // 2]:.2f}s after their "
+                             f"header stamp (limit {c.lag_max:g}s): controllers and planners see old data"))
+
     if s.cm_missing:
         if late:
             f.append(Finding(WARN, "NO_CONTROLLER_MANAGER", "/controller_manager/list_controllers is not answering"))
@@ -151,6 +208,16 @@ def evaluate(s, now, c=Config()):
 
     if s.moveit_nodes is False and late:
         f.append(Finding(ERROR, "NO_MOVE_GROUP", "no move_group node on the graph; MoveIt requests will time out"))
+
+    if s.moveit_nodes is not None:
+        while s.moveit_aborts and now - s.moveit_aborts[0] > c.moveit_window:
+            s.moveit_aborts.popleft()
+        if len(s.moveit_aborts) >= c.moveit_abort_count:
+            f.append(Finding(WARN, "MOVEIT_PLAN_FAILED", f"{len(s.moveit_aborts)} MoveIt request(s) aborted in the "
+                             f"last {c.moveit_window:.0f}s (planning or execution failed)"))
+    if s.moveit_nodes and s.planning_scene is False and late:
+        f.append(Finding(WARN, "NO_PLANNING_SCENE", "move_group is running but no planning scene is being "
+                         "published or served; planning requests will fail or see an empty world"))
 
     for ctrl, (t, err) in s.track.items():
         if now - t > c.stale:
@@ -191,6 +258,10 @@ HINTS = {
     "NO_MOVE_GROUP": "launch move_group, or drop --moveit",
     "TRACKING_ERROR": "raise controller gains, check for collisions, or slow the path",
     "TRAJ_STALLED": "the controller accepted the goal but the joints do not move; check hardware or sim and the goal tolerances",
+    "NOISY_JOINTS": "check the encoder cable and driver; if the arm is fine, raise --noise-rad or filter the joint states",
+    "STREAM_LAG": "the driver or network is delaying joint states; check the CPU load, the DDS settings and the clock (use_sim_time)",
+    "MOVEIT_PLAN_FAILED": "ros2 topic echo /move_action/_action/status, then check the start state, limits and collisions in the planning scene",
+    "NO_PLANNING_SCENE": "check that move_group loaded its planning scene monitor (publish_planning_scene, robot_description_semantic)",
     "GOAL_ABORTS": "check joint limits, collisions and goal_time / path tolerances in the controller config",
 }
 

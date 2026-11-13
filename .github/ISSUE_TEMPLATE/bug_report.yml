@@ -1,0 +1,47 @@
+name: Bug report
+description: Something did not work, or gave a wrong answer
+labels: [bug]
+body:
+  - type: dropdown
+    id: ros
+    attributes:
+      label: ROS distro
+      description: "Leave as \"not using ROS\" if it does not apply."
+      options: [Humble, Jazzy, Iron, Rolling, Other, Not using ROS]
+    validations:
+      required: true
+  - type: input
+    id: robot
+    attributes:
+      label: Robot and setup
+      description: "Robot, controller and simulator or real hardware (e.g. UR3 in Gazebo, UR5e on a real robot, Franka)."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`armdoc` version or commit"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command you ran
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: "The full output, including any error."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: false

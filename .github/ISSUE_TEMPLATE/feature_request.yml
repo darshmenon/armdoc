@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a check, option or improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: "The situation or failure you ran into."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like armdoc to do?
+    validations:
+      required: true
+  - type: input
+    id: robot
+    attributes:
+      label: Robot and setup
+      description: "Robot, ROS distro and simulator or real hardware (e.g. UR3 in Gazebo, UR5e on a real robot, Franka)."
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
+    validations:
+      required: false

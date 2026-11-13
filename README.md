@@ -1,5 +1,7 @@
 # armdoc
 
+[![CI](https://github.com/darshmenon/armdoc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/darshmenon/armdoc/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/darshmenon/armdoc)](https://github.com/darshmenon/armdoc/releases) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE) ![ROS 2](https://img.shields.io/badge/ROS_2-Humble-blue)
+
 **Why isn't my arm moving?** Attach to a running ros2_control / MoveIt 2 arm and get a one-line cause. Read-only: it subscribes to topics and lists controllers, and never publishes or changes anything.
 
 ## Quick start
@@ -123,7 +125,7 @@ python3 -m pytest test                               # the diagnosis rules, no R
 
 ## Limits
 
-- Verified on Humble against a live UR3 Gazebo sim (ros2_control, `arm_controller` + `gripper_controller`). Controller state topics assume `<controller>/state` (`JointTrajectoryControllerState`).
+- Verified on Humble against live Gazebo sims of a UR3 and a UR5e (ros2_control, `arm_controller`; the UR3 also with `gripper_controller`): healthy, a deactivated controller and a paused sim gave the expected verdicts on both. Both are Universal Robots arms in simulation; no real robot and no non-UR arm has been tested yet. Controller state topics assume `<controller>/state` (`JointTrajectoryControllerState`).
 - The Docker image and demo were built and run on Docker 29 with `ros:humble`; the GitHub Actions workflow itself has not been seen running.
 - One arm per run; use `--ns` for each.
 - Text or `--json` output; `/diagnostics` only with `--diagnostics`.

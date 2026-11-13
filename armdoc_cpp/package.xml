@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>armdoc_cpp</name>
+  <version>0.3.0</version>
+  <description>C++ version of armdoc's live joint_states checks: a low-overhead node you can leave running next to a 500 Hz controller.</description>
+  <maintainer email="darshmenon02@gmail.com">darshmenon</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tinyxml2_vendor</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

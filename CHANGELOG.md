@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- New `armdoc_cpp` colcon package (in this repo): `ros2 run armdoc_cpp armdoc_fast` is a C++ port of the live `/joint_states` checks (`JOINT_STATES_NONE`/`STALE`, `JOINT_NAN`, `LIMIT_POS`, `NEAR_LIMIT`, `LIMIT_VEL`, `EFFORT_SAT`, `NOISY_JOINTS`, `STREAM_LAG`), read-only, for leaving next to a fast controller. On a 50 Hz stream it used 0.9% of a core and 22 MB, against 5.5% and 65 MB for the Python tool (one 20 s run). Controller, MoveIt and action checks stay in the Python tool.
+- `test/test_cpp_equivalence.py` feeds identical randomized `/joint_states` streams (healthy, noisy, limits, NaN, effort, lag, stale, joint subset, slow) to `armdoc/core.py` and the C++ core and requires the same findings, level, code and message.
+
 ## 0.3.0
 - New `NOISY_JOINTS` check: position jitter estimated from the fourth difference of the joint positions over 1 s (`--noise-rad`, default 0.002 rad). Silent below 20 Hz.
 - New `STREAM_LAG` check: `/joint_states` header stamp versus arrival time, median over 2 s (`--lag-max`, default 0.5 s). Silent when the stamps use another clock (set `use_sim_time` for sim stamps).

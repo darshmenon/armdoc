@@ -123,6 +123,17 @@ python3 -m pytest test                               # the diagnosis rules, no R
 | noise, sigma 0.02 rad | `NOISY_JOINTS` (estimated 0.018 to 0.025 rad) | +0.5 s | OK in 1.6 s |
 | lag, 3 s | `JOINT_STATES_STALE`, then `STREAM_LAG` | +2.4 s, then +3.5 s | OK in 1.5 s |
 
+## C++ node (low overhead)
+
+`armdoc_cpp` is a sibling colcon package with a C++ port of the live joint-state checks, for leaving on next to a fast controller:
+
+```bash
+colcon build --packages-select armdoc_cpp && source install/setup.bash
+ros2 run armdoc_cpp armdoc_fast --ros-args -p ns:=/ur3 -p once:=10.0     # one report, exit 1 on ERROR
+```
+
+It covers `JOINT_STATES_NONE`/`STALE`, `JOINT_NAN`, `LIMIT_POS`, `NEAR_LIMIT`, `LIMIT_VEL`, `EFFORT_SAT`, `NOISY_JOINTS` and `STREAM_LAG`, with the same thresholds (`grace`, `stale`, `noise_rad`, `lag_max`). Controllers, MoveIt, trajectory goals, `--json`, `--record` and `/diagnostics` stay in the Python tool. A test feeds the same randomized streams to both and requires identical findings. Measured on a 50 Hz fake arm (one 20 s run, busy machine): 0.9% of a core and 22 MB for C++, 5.5% and 65 MB for Python.
+
 ## Limits
 
 - Verified on Humble against live Gazebo sims of a UR3 and a UR5e (ros2_control, `arm_controller`; the UR3 also with `gripper_controller`): healthy, a deactivated controller and a paused sim gave the expected verdicts on both. Both are Universal Robots arms in simulation; no real robot and no non-UR arm has been tested yet. Controller state topics assume `<controller>/state` (`JointTrajectoryControllerState`).

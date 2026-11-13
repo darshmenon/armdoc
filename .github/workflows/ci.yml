@@ -7,7 +7,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.10'}
-      - run: pip install pytest && python -m pytest -q test/test_core.py test/test_checks.py
+      - run: pip install pytest && python -m pytest -q test/test_core.py test/test_checks.py test/test_cpp_equivalence.py
   fake-arm:
     runs-on: ubuntu-latest
     container: ros:humble-ros-base
@@ -17,7 +17,7 @@ jobs:
         shell: bash
         run: |
           apt-get update -qq
-          apt-get install -y -qq ros-humble-control-msgs ros-humble-controller-manager-msgs ros-humble-diagnostic-msgs python3-pytest
+          apt-get install -y -qq ros-humble-control-msgs ros-humble-controller-manager-msgs ros-humble-diagnostic-msgs python3-pytest python3-colcon-common-extensions build-essential cmake libtinyxml2-dev ros-humble-tinyxml2-vendor
       - name: armdoc catches a stalled trajectory
         shell: bash
         run: |
@@ -39,3 +39,20 @@ jobs:
             kill $pid; wait $pid 2>/dev/null || true
             echo "$out" | grep -q "${mode##*:}"
           done
+      - name: the C++ node builds and agrees with the Python tool
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          mkdir -p /tmp/ws/src && ln -s $PWD/armdoc_cpp /tmp/ws/src/armdoc_cpp
+          (cd /tmp/ws && colcon build --packages-select armdoc_cpp) && source /tmp/ws/install/setup.bash
+          export ROS_DOMAIN_ID=83 PYTHONPATH=$PWD:$PYTHONPATH
+          python3 test/fake_arm.py & pid=$!; sleep 3
+          ros2 run armdoc_cpp armdoc_fast --ros-args -p once:=8.0 -p grace:=0.0 | tee /tmp/cpp.txt
+          python3 -m armdoc.doctor --once 8 --grace 0 | grep -v "CONTROLLER\|CTRL" | tee /tmp/py.txt
+          kill $pid; wait $pid 2>/dev/null || true
+          grep -q "arm looks healthy" /tmp/cpp.txt && grep -q "arm looks healthy" /tmp/py.txt
+          python3 test/fake_arm.py --freeze & pid=$!; sleep 6
+          set +e
+          ros2 run armdoc_cpp armdoc_fast --ros-args -p once:=6.0 -p grace:=0.0 | tee /tmp/cpp2.txt; code=${PIPESTATUS[0]}
+          kill $pid; wait $pid 2>/dev/null
+          [ "$code" = 1 ] && grep -q "JOINT_STATES_" /tmp/cpp2.txt

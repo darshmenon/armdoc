@@ -96,7 +96,7 @@ armdoc report run.jsonl --html report.html --png report.png     # no ROS needed 
 
 ![armdoc timeline of a UR3 in Gazebo](docs/ur3_report.png)
 
-*Real recording of a UR3 in Gazebo (80 s): two moves, then `arm_controller` deactivated (the move commanded meanwhile is ignored, and the arm only follows after reactivation), then the sim paused until `/joint_states` went silent. Source: `docs/ur3_run.jsonl`; open `docs/ur3_report.html` for the interactive version.*
+*Real recording of a UR3 in Gazebo (80 s): two moves, then `arm_controller` deactivated (the move commanded meanwhile is ignored, and the arm only follows after reactivation), then the sim paused until `/joint_states` went silent. Source: `docs/ur3_run.jsonl`; open [`docs/ur3_report.html`](https://darshmenon.github.io/armdoc/ur3_report.html) for the interactive version.*
 
 - **HTML:** one self-contained file (inline SVG + a little JS, no network). Hover for a crosshair with every joint value and the findings active at that moment, click a legend entry to hide a joint, light/dark follows the OS. A 1 Hz table of the joint positions is folded under the findings table.
 - **PNG:** the same timeline via matplotlib.

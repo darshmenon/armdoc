@@ -44,6 +44,10 @@ int main(int argc, char ** argv) {
         names.push_back(nm); p.push_back(std::stod(a)); v.push_back(std::stod(b)); e.push_back(std::stod(d));
       }
       feed_joints(s, now, names, p, v, e, opt(lag));
+    } else if (tag == "K") {          // K name type : is it an arm controller?
+      std::string n, t;
+      is >> n >> t;
+      std::cout << (is_arm_controller(n, t) ? 1 : 0) << '\n';
     } else if (tag == "E") {
       double now;
       is >> now;

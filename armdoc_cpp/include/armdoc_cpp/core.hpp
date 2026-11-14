@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdarg>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <deque>
@@ -112,6 +113,23 @@ inline std::map<std::string, double> estimate_noise(const State & s, double now,
     if (cnt >= 5) out[n] = std::sqrt(acc / cnt / 70.0);
   }
   return out;
+}
+
+// Controllers that drive arm joints (not broadcasters, not grippers). Same rule as armdoc/core.py is_arm_controller.
+inline bool is_arm_controller(const std::string & name, const std::string & type) {
+  auto lower = [](std::string x) { std::transform(x.begin(), x.end(), x.begin(), [](unsigned char c) { return std::tolower(c); }); return x; };
+  if (type.find("broadcaster") != std::string::npos || lower(name).find("gripper") != std::string::npos ||
+      lower(type).find("gripper") != std::string::npos)
+    return false;
+  for (const char * k : {"trajectory", "effort", "position", "velocity", "impedance", "admittance"})
+    if (type.find(k) != std::string::npos) return true;
+  return false;
+}
+
+// Joints to check after a controller poll: an empty claim (inactive controllers claim nothing) keeps the previous set.
+inline std::optional<std::set<std::string>> update_arm_joints(const std::optional<std::set<std::string>> & previous,
+                                                              const std::set<std::string> & claimed) {
+  return claimed.empty() ? previous : std::optional<std::set<std::string>>(claimed);
 }
 
 inline std::string fmt(const char * f, ...) __attribute__((format(printf, 1, 2)));

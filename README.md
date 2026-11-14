@@ -132,7 +132,7 @@ colcon build --packages-select armdoc_cpp && source install/setup.bash
 ros2 run armdoc_cpp armdoc_fast --ros-args -p ns:=/ur3 -p once:=10.0     # one report, exit 1 on ERROR
 ```
 
-It covers `JOINT_STATES_NONE`/`STALE`, `JOINT_NAN`, `LIMIT_POS`, `NEAR_LIMIT`, `LIMIT_VEL`, `EFFORT_SAT`, `NOISY_JOINTS` and `STREAM_LAG`, with the same thresholds (`grace`, `stale`, `noise_rad`, `lag_max`). Controllers, MoveIt, trajectory goals, `--json`, `--record` and `/diagnostics` stay in the Python tool. A test feeds the same randomized streams to both and requires identical findings. Measured on a 50 Hz fake arm (one 20 s run, busy machine): 0.9% of a core and 22 MB for C++, 5.5% and 65 MB for Python.
+It covers `JOINT_STATES_NONE`/`STALE`, `JOINT_NAN`, `LIMIT_POS`, `NEAR_LIMIT`, `LIMIT_VEL`, `EFFORT_SAT`, `NOISY_JOINTS` and `STREAM_LAG`, with the same thresholds (`grace`, `stale`, `noise_rad`, `lag_max`). It learns the arm's joints from the controller manager (or the `arm_joints` parameter), so a gripper at its closed limit is not judged. Trajectory goals, MoveIt, `--json`, `--record` and `/diagnostics` stay in the Python tool. Run against a live UR3 Gazebo sim, it reports the arm healthy like the Python tool. A test feeds the same randomized streams to both and requires identical findings. Measured on a 50 Hz fake arm (one 20 s run, busy machine): 0.9% of a core and 22 MB for C++, 5.5% and 65 MB for Python.
 
 ## Checked on other arms
 

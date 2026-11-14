@@ -107,3 +107,21 @@ def test_scenarios_actually_exercise_the_checks(cli, tmp_path):
         seen |= {x.code for fl in py for x in fl}
     assert {"NOISY_JOINTS", "LIMIT_POS", "NEAR_LIMIT", "LIMIT_VEL", "JOINT_NAN", "EFFORT_SAT", "STREAM_LAG",
             "JOINT_STATES_STALE"} <= seen
+
+
+def test_is_arm_controller_matches_python(cli, tmp_path):
+    cases = [("arm_controller", "joint_trajectory_controller/JointTrajectoryController"),
+             ("joint_state_broadcaster", "joint_state_broadcaster/JointStateBroadcaster"),
+             ("gripper_controller", "position_controllers/GripperActionController"),
+             ("panda_hand_controller", "position_controllers/GripperActionController"),
+             ("forward_command_controller_effort", "forward_command_controller/ForwardCommandController"),
+             ("my_position", "position_controllers/JointGroupPositionController"),
+             ("imp", "ur_controllers/CartesianImpedanceController"),
+             ("Hand_GRIPPER", "velocity_controllers/JointGroupVelocityController"),
+             ("diff_drive", "diff_drive_controller/DiffDriveController"),
+             ("adm", "admittance_controller/AdmittanceController")]
+    p = tmp_path / "k.txt"
+    p.write_text("".join(f"K {n} {t}\n" for n, t in cases))
+    out = subprocess.run([cli, str(p)], check=True, capture_output=True, text=True).stdout.split()
+    assert [int(x) for x in out] == [int(core.is_arm_controller(n, t)) for n, t in cases]
+    assert any(int(x) for x in out) and not all(int(x) for x in out)

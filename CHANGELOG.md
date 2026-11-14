@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Fix: deactivating the arm controller no longer widens the checks to every joint. An inactive controller claims no interfaces, so armdoc forgot which joints are the arm's and judged gripper fingers resting at their closed limit as arm joints (`NEAR_LIMIT`). Found by running armchaos against a Franka Panda; the last known arm joints are kept (`update_arm_joints`).
+- Verified on two non-UR arms with the real ros2_control controller manager (mock hardware): FANUC (6 joints) and Franka Panda (7 joints), through armchaos, all expected codes raised.
 - New `armdoc_cpp` colcon package (in this repo): `ros2 run armdoc_cpp armdoc_fast` is a C++ port of the live `/joint_states` checks (`JOINT_STATES_NONE`/`STALE`, `JOINT_NAN`, `LIMIT_POS`, `NEAR_LIMIT`, `LIMIT_VEL`, `EFFORT_SAT`, `NOISY_JOINTS`, `STREAM_LAG`), read-only, for leaving next to a fast controller. On a 50 Hz stream it used 0.9% of a core and 22 MB, against 5.5% and 65 MB for the Python tool (one 20 s run). Controller, MoveIt and action checks stay in the Python tool.
 - `test/test_cpp_equivalence.py` feeds identical randomized `/joint_states` streams (healthy, noisy, limits, NaN, effort, lag, stale, joint subset, slow) to `armdoc/core.py` and the C++ core and requires the same findings, level, code and message.
 

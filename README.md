@@ -134,6 +134,10 @@ ros2 run armdoc_cpp armdoc_fast --ros-args -p ns:=/ur3 -p once:=10.0     # one r
 
 It covers `JOINT_STATES_NONE`/`STALE`, `JOINT_NAN`, `LIMIT_POS`, `NEAR_LIMIT`, `LIMIT_VEL`, `EFFORT_SAT`, `NOISY_JOINTS` and `STREAM_LAG`, with the same thresholds (`grace`, `stale`, `noise_rad`, `lag_max`). Controllers, MoveIt, trajectory goals, `--json`, `--record` and `/diagnostics` stay in the Python tool. A test feeds the same randomized streams to both and requires identical findings. Measured on a 50 Hz fake arm (one 20 s run, busy machine): 0.9% of a core and 22 MB for C++, 5.5% and 65 MB for Python.
 
+## Checked on other arms
+
+Besides UR3 and UR5e in Gazebo, armdoc was run (through armchaos) against FANUC (6 joints) and Franka Panda (7 joints, separate gripper controller) on the real ros2_control controller manager with mock hardware: every injected fault was named by the right code. The Fanuc URDF has no effort limit, so `EFFORT_SAT` cannot fire there. Not a real arm; see armchaos `docs/e2e_fanuc_ros2_control.txt` and `docs/e2e_panda_ros2_control.txt`.
+
 ## Limits
 
 - Verified on Humble against live Gazebo sims of a UR3 and a UR5e (ros2_control, `arm_controller`; the UR3 also with `gripper_controller`): healthy, a deactivated controller and a paused sim gave the expected verdicts on both. Both are Universal Robots arms in simulation; no real robot and no non-UR arm has been tested yet. Controller state topics assume `<controller>/state` (`JointTrajectoryControllerState`).

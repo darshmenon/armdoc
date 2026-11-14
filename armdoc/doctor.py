@@ -18,7 +18,7 @@ from std_msgs.msg import String
 
 from armdoc.record import Recorder
 from armdoc.core import (Config, State, evaluate, feed_joints, format_findings, is_arm_controller, parse_limits,
-                         verdict_line)
+                         update_arm_joints, verdict_line)
 
 EXECUTING, ABORTED, CANCELED = 2, 6, 5
 
@@ -125,7 +125,7 @@ class ArmDoc(Node):
                 self.s.cm_missing = False
                 claimed = {i.rsplit("/", 1)[0] for c in res.controller if is_arm_controller(c.name, c.type)
                            for i in c.claimed_interfaces}
-                self.s.arm_joints = claimed or None
+                self.s.arm_joints = update_arm_joints(self.s.arm_joints, claimed)
                 for name, typ, _ in self.s.controllers:
                     if "joint_trajectory" in typ and name not in self.subscribed:
                         self.subscribed.add(name)

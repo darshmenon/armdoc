@@ -141,6 +141,13 @@ def is_arm_controller(name, typ):
     return any(k in typ for k in ("trajectory", "effort", "position", "velocity", "impedance", "admittance"))
 
 
+def update_arm_joints(previous, claimed):
+    """Joints to check after a controller poll. An inactive controller claims no interfaces, so an empty `claimed`
+    keeps the last known set instead of widening the checks to every joint (which would judge gripper fingers resting
+    at their closed limit as arm joints). None until an arm controller has been seen active."""
+    return set(claimed) if claimed else previous
+
+
 def evaluate(s, now, c=Config()):
     f = []
     up = now - s.t0

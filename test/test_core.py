@@ -141,3 +141,22 @@ def test_hints_cover_every_code_and_format_adds_them():
     assert "-> ros2 control set_controller_state" in out
     assert "->" not in format_findings([Finding("ERROR", "CTRL_INACTIVE", "y")])
     assert format_findings([]) == "OK    arm looks healthy"
+
+
+def test_deactivating_the_arm_controller_does_not_widen_the_checks_to_gripper_fingers():
+    """Found on a Franka Panda (ros2_control mock hardware): with the arm controller inactive it claims no interfaces,
+    and armdoc then judged the gripper fingers, resting at their closed limit, as arm joints."""
+    from armdoc.core import update_arm_joints
+    arm = {"panda_joint1", "panda_joint2"}
+    assert update_arm_joints(None, arm) == arm            # first poll, controller active
+    assert update_arm_joints(arm, set()) == arm           # controller deactivated: keep the known arm joints
+    assert update_arm_joints(None, set()) is None         # never saw an arm controller: check everything, as before
+    assert update_arm_joints(arm, {"j7"}) == {"j7"}       # a changed claim replaces the set
+
+    s = State(t0=0.0)
+    s.limits = {"panda_finger_joint1": dict(lower=0.0, upper=0.04, velocity=0.2, effort=20.0, continuous=False)}
+    s.arm_joints = update_arm_joints(arm, set())
+    feed_joints(s, 100.0, ["panda_finger_joint1"], [0.0], [0.0], [0.0])
+    assert "NEAR_LIMIT" not in [f.code for f in evaluate(s, 100.5)]
+    s.arm_joints = None                                    # without the fix the fingers are judged: the old behaviour
+    assert "NEAR_LIMIT" in [f.code for f in evaluate(s, 100.5)]

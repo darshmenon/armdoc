@@ -9,6 +9,7 @@ import rclpy
 from action_msgs.msg import GoalStatusArray
 from control_msgs.msg import JointTrajectoryControllerState
 from controller_manager_msgs.srv import ListControllers
+from rcl_interfaces.srv import GetParameters
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.utilities import remove_ros_args
@@ -132,6 +133,9 @@ class ArmDoc(Node):
                         self.create_subscription(JointTrajectoryControllerState, f"{self.ns}/{name}/state",
                                                  lambda m, n=name: self.on_state(n, m), 10)
                         self.watch_status(f"{self.ns}/{name}/follow_joint_trajectory/_action/status", True)
+                    if "joint_trajectory" in typ:
+                        self.s.traj_action_pubs[name] = len(self.get_publishers_info_by_topic(
+                            f"{self.ns}/{name}/follow_joint_trajectory/_action/status"))
             except Exception:
                 self.s.cm_missing = True
             self.pending = None
@@ -141,11 +145,29 @@ class ArmDoc(Node):
             else:
                 self.s.cm_missing = True
         if self.moveit:
+            self.poll_moveit_controllers()
             self.s.moveit_nodes = any(n == "move_group" for n, _ in self.get_node_names_and_namespaces())
             if self.s.moveit_nodes:
                 served = {n for n, _ in self.get_service_names_and_types()}
                 self.s.planning_scene = (bool(self.get_publishers_info_by_topic(f"{self.ns}/monitored_planning_scene"))
                                          or f"{self.ns}/get_planning_scene" in served)
+
+    def poll_moveit_controllers(self):
+        """Read move_group's configured controller_names (a mismatch with ros2_control breaks execution)."""
+        if getattr(self, "mg_cli", None) is None:
+            self.mg_cli = self.create_client(GetParameters, f"{self.ns}/move_group/get_parameters")
+            self.mg_pending = None
+        if self.mg_pending is not None and self.mg_pending.done():
+            try:
+                v = self.mg_pending.result().values[0]
+                self.s.moveit_ctrl_names = list(v.string_array_value) if v.type == 9 else None
+            except Exception:
+                pass
+            self.mg_pending = None
+        if self.mg_pending is None and self.mg_cli.service_is_ready():
+            req = GetParameters.Request()
+            req.names = ["moveit_simple_controller_manager.controller_names"]
+            self.mg_pending = self.mg_cli.call_async(req)
 
     def enable_diagnostics(self):
         from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue

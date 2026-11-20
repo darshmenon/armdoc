@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- New `NO_TRAJ_ACTION` (error): an active joint trajectory controller whose `follow_joint_trajectory` action server is not on the graph (MoveIt: "Action client not connected"). New `MOVEIT_CTRL_MISMATCH` (error, `--moveit`): move_group's `controller_names` lists a controller ros2_control does not have. Both unit-tested; the fake arm run stays healthy, but neither fault has been reproduced live.
 
 ## 0.4.0
 - `armdoc_fast` takes `-p json:=true` and prints the findings as a JSON list of `{level, code, msg}`, like `armdoc --json`. `test/test_cpp_live.py` (4 tests, skipped without ROS and armdoc_cpp) checks the arm-joint learning and the JSON shape against `test/fake_gripper_arm.py`.

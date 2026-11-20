@@ -60,6 +60,8 @@ class State:
     moveit_aborts: deque = field(default_factory=deque)                    # receive times of aborted /move_action goals
     planning_scene: bool = None                       # None = unknown; False = move_group is up but no scene is served
     eff_sat_since: dict = field(default_factory=dict)
+    traj_action_pubs: dict = field(default_factory=dict)   # trajectory controller -> publishers on its action status topic
+    moveit_ctrl_names: list = None                    # controller_names move_group was configured with (None = unknown)
 
 
 def parse_limits(urdf_xml):
@@ -213,6 +215,19 @@ def evaluate(s, now, c=Config()):
         if arm and not any(x[2] == "active" for x in arm) and late:
             f.append(Finding(ERROR, "NO_ACTIVE_ARM_CTRL", "no arm controller is active, so nothing can move the arm"))
 
+    if s.controllers is not None and late:
+        active_traj = [n for n, t, st in s.controllers if st == "active" and "joint_trajectory" in t]
+        for name in active_traj:
+            if s.traj_action_pubs.get(name) == 0:
+                f.append(Finding(ERROR, "NO_TRAJ_ACTION", f"controller {name} is active but its follow_joint_trajectory "
+                                 "action server is not on the graph; MoveIt reports 'Action client not connected'"))
+        if s.moveit_ctrl_names:
+            known = {n for n, _, _ in s.controllers}
+            missing = [n for n in s.moveit_ctrl_names if n not in known]
+            if missing:
+                f.append(Finding(ERROR, "MOVEIT_CTRL_MISMATCH", f"move_group is configured for controller(s) {missing} "
+                                 f"that ros2_control does not have (it has {sorted(known)}); MoveIt cannot execute"))
+
     if s.moveit_nodes is False and late:
         f.append(Finding(ERROR, "NO_MOVE_GROUP", "no move_group node on the graph; MoveIt requests will time out"))
 
@@ -263,6 +278,8 @@ HINTS = {
     "CTRL_INACTIVE": "ros2 control set_controller_state <name> active",
     "NO_ACTIVE_ARM_CTRL": "activate an arm controller (ros2 control list_controllers shows the state)",
     "NO_MOVE_GROUP": "launch move_group, or drop --moveit",
+    "NO_TRAJ_ACTION": "the controller is active but did not create its action server: check its action_monitor / allow_partial_joints params and its log",
+    "MOVEIT_CTRL_MISMATCH": "make controller_names in moveit_controllers.yaml match `ros2 control list_controllers` exactly",
     "TRACKING_ERROR": "raise controller gains, check for collisions, or slow the path",
     "TRAJ_STALLED": "the controller accepted the goal but the joints do not move; check hardware or sim and the goal tolerances",
     "NOISY_JOINTS": "check the encoder cable and driver; if the arm is fine, raise --noise-rad or filter the joint states",

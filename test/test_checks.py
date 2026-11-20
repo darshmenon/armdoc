@@ -111,3 +111,37 @@ def test_no_planning_scene():
 def test_new_codes_have_hints():
     for code in ("NOISY_JOINTS", "STREAM_LAG", "MOVEIT_PLAN_FAILED", "NO_PLANNING_SCENE"):
         assert code in HINTS
+
+
+JTC = "joint_trajectory_controller/JointTrajectoryController"
+
+
+def ctrl_state(controllers, **kw):
+    s = State(t0=0.0)
+    s.controllers = controllers
+    for k, v in kw.items():
+        setattr(s, k, v)
+    return s
+
+
+def test_active_trajectory_controller_without_action_server_is_an_error():
+    s = ctrl_state([("arm_controller", JTC, "active")], traj_action_pubs={"arm_controller": 0})
+    out = evaluate(s, 100.0, Config(grace=1))
+    assert "NO_TRAJ_ACTION" in codes(out)
+    assert "NO_TRAJ_ACTION" in HINTS
+    ok = ctrl_state([("arm_controller", JTC, "active")], traj_action_pubs={"arm_controller": 1})
+    assert "NO_TRAJ_ACTION" not in codes(evaluate(ok, 100.0, Config(grace=1)))
+    unknown = ctrl_state([("arm_controller", JTC, "active")])      # count not read yet: stay quiet
+    assert "NO_TRAJ_ACTION" not in codes(evaluate(unknown, 100.0, Config(grace=1)))
+    inactive = ctrl_state([("arm_controller", JTC, "inactive")], traj_action_pubs={"arm_controller": 0})
+    assert "NO_TRAJ_ACTION" not in codes(evaluate(inactive, 100.0, Config(grace=1)))   # CTRL_INACTIVE says it
+
+
+def test_moveit_controller_names_must_exist_in_ros2_control():
+    ctrls = [("arm_controller", JTC, "active"), ("joint_state_broadcaster", "joint_state_broadcaster/JointStateBroadcaster", "active")]
+    bad = ctrl_state(ctrls, moveit_ctrl_names=["scaled_joint_trajectory_controller"], traj_action_pubs={"arm_controller": 1})
+    out = [x for x in evaluate(bad, 100.0, Config(grace=1)) if x.code == "MOVEIT_CTRL_MISMATCH"]
+    assert out and "scaled_joint_trajectory_controller" in out[0].msg
+    good = ctrl_state(ctrls, moveit_ctrl_names=["arm_controller"], traj_action_pubs={"arm_controller": 1})
+    assert "MOVEIT_CTRL_MISMATCH" not in codes(evaluate(good, 100.0, Config(grace=1)))
+    assert "MOVEIT_CTRL_MISMATCH" in HINTS

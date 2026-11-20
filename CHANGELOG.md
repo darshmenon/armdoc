@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 0.5.0
 - Fix, found by running the MCP server against a live UR3 Gazebo sim: attaching while the arm controller was already inactive left the arm joints unknown, so every gripper joint resting at its closed limit raised `NEAR_LIMIT`, burying the real `CTRL_INACTIVE`. Joints named like a gripper or finger are now skipped for `NEAR_LIMIT` until the arm joints are learned. Verified live: only `CTRL_INACTIVE` and `NO_ACTIVE_ARM_CTRL` remain, and the arm reads healthy again after reactivation.
 - New `NO_TRAJ_ACTION` (error): an active joint trajectory controller whose `follow_joint_trajectory` action server is not on the graph (MoveIt: "Action client not connected"). New `MOVEIT_CTRL_MISMATCH` (error, `--moveit`): move_group's `controller_names` lists a controller ros2_control does not have. Both unit-tested; the fake arm run stays healthy, but neither fault has been reproduced live.
 

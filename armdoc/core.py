@@ -143,6 +143,11 @@ def is_arm_controller(name, typ):
     return any(k in typ for k in ("trajectory", "effort", "position", "velocity", "impedance", "admittance"))
 
 
+def looks_like_gripper(name):
+    n = name.lower()
+    return "gripper" in n or "finger" in n
+
+
 def update_arm_joints(previous, claimed):
     """Joints to check after a controller poll. An inactive controller claims no interfaces, so an empty `claimed`
     keeps the last known set instead of widening the checks to every joint (which would judge gripper fingers resting
@@ -178,7 +183,9 @@ def evaluate(s, now, c=Config()):
                 m = c.near_limit * (hi - lo)
                 if p < lo or p > hi:
                     f.append(Finding(ERROR, "LIMIT_POS", f"{n} at {p:.3f} is outside its limits [{lo:.3f}, {hi:.3f}]"))
-                elif p < lo + m or p > hi - m:
+                elif (p < lo + m or p > hi - m) and not (s.arm_joints is None and looks_like_gripper(n)):
+                    # arm joints not learned yet (e.g. attached while the arm controller was down): a gripper
+                    # resting at its closed limit is normal, not a planning hazard
                     f.append(Finding(WARN, "NEAR_LIMIT", f"{n} at {p:.3f} is within {c.near_limit:.0%} of its "
                                      f"limit [{lo:.3f}, {hi:.3f}]; planners often fail here"))
             if lim.get("velocity") and math.isfinite(v) and abs(v) > lim["velocity"] * c.vel_margin:

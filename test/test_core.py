@@ -158,5 +158,9 @@ def test_deactivating_the_arm_controller_does_not_widen_the_checks_to_gripper_fi
     s.arm_joints = update_arm_joints(arm, set())
     feed_joints(s, 100.0, ["panda_finger_joint1"], [0.0], [0.0], [0.0])
     assert "NEAR_LIMIT" not in [f.code for f in evaluate(s, 100.5)]
-    s.arm_joints = None                                    # without the fix the fingers are judged: the old behaviour
-    assert "NEAR_LIMIT" in [f.code for f in evaluate(s, 100.5)]
+    s.arm_joints = None                                    # arm joints never learned: fingers are still skipped by name
+    assert "NEAR_LIMIT" not in [f.code for f in evaluate(s, 100.5)]
+    s.limits = {"joint_a": dict(lower=0.0, upper=0.04, velocity=0.2, effort=20.0, continuous=False)}
+    s.joints.clear()
+    feed_joints(s, 100.0, ["joint_a"], [0.0], [0.0], [0.0])
+    assert "NEAR_LIMIT" in [f.code for f in evaluate(s, 100.5)]   # a non-gripper joint is still judged

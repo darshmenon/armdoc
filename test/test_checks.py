@@ -145,3 +145,12 @@ def test_moveit_controller_names_must_exist_in_ros2_control():
     good = ctrl_state(ctrls, moveit_ctrl_names=["arm_controller"], traj_action_pubs={"arm_controller": 1})
     assert "MOVEIT_CTRL_MISMATCH" not in codes(evaluate(good, 100.0, Config(grace=1)))
     assert "MOVEIT_CTRL_MISMATCH" in HINTS
+
+
+def test_gripper_at_its_closed_limit_is_not_flagged_before_arm_joints_are_known():
+    s = State(t0=0.0)
+    s.limits = {"gripper_joint": dict(lower=0.0, upper=1.3), "shoulder_pan_joint": dict(lower=-3.0, upper=3.0)}
+    feed_joints(s, 9.0, ["gripper_joint", "shoulder_pan_joint"], [0.0, 2.999], [0.0, 0.0], [0.0, 0.0])
+    out = evaluate(s, 9.0, Config(grace=1))
+    msgs = [x.msg for x in out if x.code == "NEAR_LIMIT"]
+    assert any("shoulder_pan_joint" in m for m in msgs) and not any("gripper_joint" in m for m in msgs)

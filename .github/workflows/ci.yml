@@ -56,3 +56,27 @@ jobs:
           ros2 run armdoc_cpp armdoc_fast --ros-args -p once:=6.0 -p grace:=0.0 | tee /tmp/cpp2.txt; code=${PIPESTATUS[0]}
           kill $pid; wait $pid 2>/dev/null
           [ "$code" = 1 ] && grep -q "JOINT_STATES_" /tmp/cpp2.txt
+  jazzy-cpp:
+    runs-on: ubuntu-latest
+    container: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        shell: bash
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq python3-colcon-common-extensions build-essential cmake libtinyxml2-dev \
+            ros-jazzy-tinyxml2-vendor ros-jazzy-controller-manager-msgs ros-jazzy-control-msgs \
+            ros-jazzy-diagnostic-msgs python3-pytest
+      - name: armdoc_cpp builds on Jazzy and agrees with the Python core
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          mkdir -p /tmp/ws/src && ln -s $PWD/armdoc_cpp /tmp/ws/src/armdoc_cpp
+          (cd /tmp/ws && colcon build --packages-select armdoc_cpp) && source /tmp/ws/install/setup.bash
+          export PYTHONPATH=$PWD:$PYTHONPATH ROS_DOMAIN_ID=84
+          python3 -m pytest -q test/test_cpp_equivalence.py
+          python3 test/fake_arm.py & pid=$!; sleep 3
+          ros2 run armdoc_cpp armdoc_fast --ros-args -p once:=8.0 -p grace:=0.0 | tee /tmp/cpp.txt
+          kill $pid; wait $pid 2>/dev/null || true
+          grep -q "arm looks healthy" /tmp/cpp.txt

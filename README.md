@@ -104,6 +104,9 @@ armdoc report run.jsonl --html report.html --png report.png     # no ROS needed 
 - **PNG:** the same timeline via matplotlib.
 - Lines break where `/joint_states` was silent, so a gap is shown as a gap. The controller lane shows only controllers that had been active and then dropped out.
 
+
+The same report runs in the browser: `web/index.html` loads your `--record` log and builds the page with Pyodide, nothing uploaded (no ROS, no numpy needed). Serve the folder with any static host (`python3 -m http.server -d web`, or GitHub Pages); `web/build.sh` refreshes the copied module. Tested in headless Chrome with the bundled UR3 example (same findings as the command line) and a garbage file (clear error).
+
 ## Try it without a robot
 
 `test/fake_arm.py` publishes a fake ros2_control graph: healthy, or `--freeze`, `--inactive`, `--stall`, and with `--moveit` a fake `move_group` (`--no-scene`, `--plan-fail`).
@@ -132,7 +135,7 @@ colcon build --packages-select armdoc_cpp && source install/setup.bash
 ros2 run armdoc_cpp armdoc_fast --ros-args -p ns:=/ur3 -p once:=10.0     # one report, exit 1 on ERROR
 ```
 
-It covers `JOINT_STATES_NONE`/`STALE`, `JOINT_NAN`, `LIMIT_POS`, `NEAR_LIMIT`, `LIMIT_VEL`, `EFFORT_SAT`, `NOISY_JOINTS` and `STREAM_LAG`, with the same thresholds (`grace`, `stale`, `noise_rad`, `lag_max`). It learns the arm's joints from the controller manager (or the `arm_joints` parameter), so a gripper at its closed limit is not judged. Trajectory goals, MoveIt, `--json`, `--record` and `/diagnostics` stay in the Python tool. Run against a live UR3 Gazebo sim, it reports the arm healthy like the Python tool. A test feeds the same randomized streams to both and requires identical findings. Measured on a 50 Hz fake arm (one 20 s run, busy machine): 0.9% of a core and 22 MB for C++, 5.5% and 65 MB for Python.
+It covers `JOINT_STATES_NONE`/`STALE`, `JOINT_NAN`, `LIMIT_POS`, `NEAR_LIMIT`, `LIMIT_VEL`, `EFFORT_SAT`, `NOISY_JOINTS` and `STREAM_LAG`, with the same thresholds (`grace`, `stale`, `noise_rad`, `lag_max`). It learns the arm's joints from the controller manager (or the `arm_joints` parameter), so a gripper at its closed limit is not judged. `-p json:=true` prints the findings as the same JSON list as `armdoc --json`. Trajectory goals, MoveIt, `--record` and `/diagnostics` stay in the Python tool. Run against a live UR3 Gazebo sim, it reports the arm healthy like the Python tool. A test feeds the same randomized streams to both and requires identical findings. Measured on a 50 Hz fake arm (one 20 s run, busy machine): 0.9% of a core and 22 MB for C++, 5.5% and 65 MB for Python.
 
 ## Checked on other arms
 

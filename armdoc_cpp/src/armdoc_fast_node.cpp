@@ -1,6 +1,6 @@
 // armdoc_fast: the live /joint_states checks of armdoc in C++ (see include/armdoc_cpp/core.hpp for what is covered).
 // Read-only: subscribes to <ns>/joint_states and <ns>/robot_description, prints findings every `period` seconds.
-// Parameters: ns, period, once (seconds; print one report, exit 1 on ERROR), grace, stale, noise_rad, lag_max,
+// Parameters: ns, period, json (print findings as a JSON list like `armdoc --json`), once (seconds; print one report, exit 1 on ERROR), grace, stale, noise_rad, lag_max,
 // arm_joints (string array; default: learned from <ns>/controller_manager/list_controllers, like the Python tool).
 #include <tinyxml2.h>
 
@@ -40,6 +40,7 @@ class ArmDocFast : public rclcpp::Node {
     ns_ = declare_parameter<std::string>("ns", "");
     const double period = declare_parameter<double>("period", 2.0);
     once_ = declare_parameter<double>("once", 0.0);
+    json_ = declare_parameter<bool>("json", false);
     cfg_.grace = declare_parameter<double>("grace", cfg_.grace);
     cfg_.stale = declare_parameter<double>("stale", cfg_.stale);
     cfg_.noise_rad = declare_parameter<double>("noise_rad", cfg_.noise_rad);
@@ -83,13 +84,33 @@ class ArmDocFast : public rclcpp::Node {
           state_.arm_joints = armdoc::update_arm_joints(state_.arm_joints, claimed);
         });
   }
+  static std::string quote(const std::string & v) {
+    std::string o = "\"";
+    for (unsigned char c : v) {
+      if (c == '"' || c == '\\') { o += '\\'; o += (char)c; }
+      else if (c == '\n') o += "\\n";
+      else if (c < 0x20) { char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); o += b; }
+      else o += (char)c;          // UTF-8 bytes pass through
+    }
+    return o + "\"";
+  }
   void report() {
     auto f = armdoc::evaluate(state_, now_s(), cfg_);
     bool error = false;
-    if (f.empty()) std::printf("OK    arm looks healthy\n");
-    for (auto & x : f) {
-      std::printf("%-5s [%s] %s\n", x.level.c_str(), x.code.c_str(), x.msg.c_str());
-      error |= x.level == armdoc::ERROR;
+    if (json_) {                                 // same shape as the Python `armdoc --json`: [{level, code, msg}]
+      std::string out = "[";
+      for (size_t i = 0; i < f.size(); ++i) {
+        out += std::string(i ? ", " : "") + "{\"level\": " + quote(f[i].level) + ", \"code\": " + quote(f[i].code) +
+               ", \"msg\": " + quote(f[i].msg) + "}";
+        error |= f[i].level == armdoc::ERROR;
+      }
+      std::printf("%s]\n", out.c_str());
+    } else {
+      if (f.empty()) std::printf("OK    arm looks healthy\n");
+      for (auto & x : f) {
+        std::printf("%-5s [%s] %s\n", x.level.c_str(), x.code.c_str(), x.msg.c_str());
+        error |= x.level == armdoc::ERROR;
+      }
     }
     std::fflush(stdout);
     if (once_ > 0) {
@@ -99,6 +120,7 @@ class ArmDocFast : public rclcpp::Node {
   }
   std::string ns_;
   double once_ = 0;
+  bool json_ = false;
   armdoc::Config cfg_;
   armdoc::State state_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr sub_js_;

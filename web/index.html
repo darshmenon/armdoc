@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>armdoc report in the browser</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg:#fafafa; --fg:#1b1b1b; --mut:#666; --card:#fff; --line:#ddd; --acc:#1f6feb; --err:#c62828; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15171a; --fg:#e8e8e8; --mut:#9aa; --card:#1e2125; --line:#33373d; --acc:#6ea8ff; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }
+  main { max-width:1000px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 4px; } p.sub { color:var(--mut); margin:0 0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; margin:12px 0; }
+  button, label.btn { background:var(--acc); color:#fff; border:0; border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; margin:0 6px 6px 0; display:inline-block; }
+  button.alt { background:transparent; color:var(--acc); border:1px solid var(--acc); }
+  input[type=file] { display:none; }
+  iframe { width:100%; height:1050px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  #status { color:var(--mut); } .err { color:var(--err); } small { color:var(--mut); }
+</style>
+</head>
+<body>
+<main>
+  <h1>armdoc report in the browser</h1>
+  <p class="sub">Turn an armdoc <code>--record</code> log into the timeline report (findings, controller states, joint positions). Runs in your browser (Python via Pyodide): the file is not uploaded anywhere.</p>
+  <div class="card">
+    <label class="btn">Choose a .jsonl log<input id="file" type="file" accept=".jsonl,.json,.txt"></label>
+    <button class="alt" id="ex">Example: UR3 in Gazebo</button>
+    <div><small>Record one with <code>armdoc --record run.jsonl</code> next to your arm.</small></div>
+    <div id="status">Loading Python (about 10 MB, once)...</div>
+  </div>
+  <div class="card" id="out" hidden><iframe id="frame" title="armdoc timeline report"></iframe></div>
+  <p><small>armdoc is open source: <a href="https://github.com/darshmenon/armdoc">github.com/darshmenon/armdoc</a>. The page runs the same <code>armdoc report</code> module as the command line.</small></p>
+</main>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let py = null;
+async function boot() {
+  try {
+    py = await loadPyodide();
+    py.FS.mkdir("/pkg"); py.FS.mkdir("/pkg/armdoc");
+    for (const f of ["__init__", "report"]) {
+      const r = await fetch(`armdoc/${f}.py`);
+      if (!r.ok) throw new Error(`could not fetch armdoc/${f}.py`);
+      py.FS.writeFile(`/pkg/armdoc/${f}.py`, await r.text());
+    }
+    py.runPython(`
+import sys
+sys.path.insert(0, "/pkg")
+from armdoc import report
+
+def run(path, title):
+    data = report.load(path)
+    if not data.get("samples"):
+        raise ValueError("no armdoc records found: record a log with  armdoc --record run.jsonl")
+    return report.build_html(data, title)
+`);
+    $("status").textContent = "Ready."; window.pyReady = true;
+  } catch (e) { $("status").innerHTML = `<span class="err">Could not start Python: ${e.message}</span>`; }
+}
+async function build(name, text) {
+  if (!py) { $("status").textContent = "Python is still loading."; return; }
+  $("status").textContent = "Building...";
+  try {
+    py.FS.writeFile("/tmp/in.jsonl", text);
+    $("frame").srcdoc = py.globals.get("run")("/tmp/in.jsonl", name);
+    $("out").hidden = false; $("status").textContent = "Done.";
+  } catch (e) {
+    const msg = String(e.message || e).split("\n").filter(l => l.trim()).pop().replace("/tmp/in.jsonl", name);
+    $("status").innerHTML = `<span class="err">${msg.replace(/</g, "&lt;")}</span>`; $("out").hidden = true;
+  }
+}
+$("file").addEventListener("change", async ev => { const f = ev.target.files[0]; if (f) build(f.name, await f.text()); });
+$("ex").addEventListener("click", async () => { const r = await fetch("examples/ur3_run.jsonl"); if (r.ok) build("ur3_run.jsonl", await r.text()); });
+boot();
+</script>
+</body>
+</html>

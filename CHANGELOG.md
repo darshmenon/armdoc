@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- `armdoc_fast` takes `-p json:=true` and prints the findings as a JSON list of `{level, code, msg}`, like `armdoc --json`. `test/test_cpp_live.py` (4 tests, skipped without ROS and armdoc_cpp) checks the arm-joint learning and the JSON shape against `test/fake_gripper_arm.py`.
+- CI job `jazzy-cpp` (ros:jazzy-ros-base): builds `armdoc_cpp`, runs the equivalence tests and a live check on the fake arm. Run locally in docker first: builds, 20 tests pass, healthy arm reported healthy by both the Python and C++ tools, freeze exits 1.
 - armdoc_cpp, found by running it against a live UR3 Gazebo sim: (1) it reported a lag of 1.8 billion seconds because the sim stamps messages with sim time while the node compares against the wall clock; it now ignores gaps over 1e4 s like the Python tool. (2) It judged the Robotiq `finger_joint`, resting at its closed limit, as an arm joint (`NEAR_LIMIT`); it now asks `<ns>/controller_manager/list_controllers` which joints the arm controllers claim (same `is_arm_controller` rule and the same keep-the-last-set behaviour as the Python tool), or takes an `arm_joints` parameter. `is_arm_controller` is checked against Python in the equivalence test.
 - Fix: deactivating the arm controller no longer widens the checks to every joint. An inactive controller claims no interfaces, so armdoc forgot which joints are the arm's and judged gripper fingers resting at their closed limit as arm joints (`NEAR_LIMIT`). Found by running armchaos against a Franka Panda; the last known arm joints are kept (`update_arm_joints`).
 - Verified on two non-UR arms with the real ros2_control controller manager (mock hardware): FANUC (6 joints) and Franka Panda (7 joints), through armchaos, all expected codes raised.

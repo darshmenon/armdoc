@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Per-arm baselines: `--learn SECS` records the normal `/joint_states` rate, `--baseline` warns with `RATE_DROP` / `RATE_SPIKE` below half or above double that. Plain statistics, no model. Run live against the fake arm (learn at 50 Hz, quiet at 50 Hz, `RATE_DROP` at 10 Hz).
 
 ## 0.5.0
 - Fix, found by running the MCP server against a live UR3 Gazebo sim: attaching while the arm controller was already inactive left the arm joints unknown, so every gripper joint resting at its closed limit raised `NEAR_LIMIT`, burying the real `CTRL_INACTIVE`. Joints named like a gripper or finger are now skipped for `NEAR_LIMIT` until the arm joints are learned. Verified live: only `CTRL_INACTIVE` and `NO_ACTIVE_ARM_CTRL` remain, and the arm reads healthy again after reactivation.

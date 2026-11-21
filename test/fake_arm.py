@@ -30,6 +30,7 @@ URDF = '<robot name="r"><link name="a"/><link name="b"/>' + "".join(
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--hz", type=float, default=50.0, help="joint_states rate")
     ap.add_argument("--freeze", action="store_true")
     ap.add_argument("--inactive", action="store_true")
     ap.add_argument("--stall", action="store_true")
@@ -66,7 +67,7 @@ def main():
             s = GoalStatus(status=GoalStatus.STATUS_EXECUTING)
             g.status_list = [s]
             st.publish(g)
-    n.create_timer(0.02, tick)
+    n.create_timer(1.0 / a.hz, tick)
 
     if a.moveit:
         import uuid

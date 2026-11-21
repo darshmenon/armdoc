@@ -164,3 +164,28 @@ def test_deactivating_the_arm_controller_does_not_widen_the_checks_to_gripper_fi
     s.joints.clear()
     feed_joints(s, 100.0, ["joint_a"], [0.0], [0.0], [0.0])
     assert "NEAR_LIMIT" in [f.code for f in evaluate(s, 100.5)]   # a non-gripper joint is still judged
+
+
+def test_baseline_names_a_slowed_joint_states_and_stays_quiet_otherwise():
+    from armdoc import baseline as bl
+    s = state()
+    for i in range(600):                                              # 20 s at 30 Hz
+        feed_joints(s, i / 30, ["j1"], [0.0], [0.0], [0.0])
+    s.baseline = bl.learn({"joint_states": s.js_times})
+    assert abs(s.baseline["joint_states"]["hz"] - 30) < 1.5
+    assert not codes(evaluate(s, 20.0)) & {"RATE_DROP", "RATE_SPIKE"}
+    for i in range(80):                                               # then 8 Hz for 10 s
+        feed_joints(s, 20 + i / 8, ["j1"], [0.0], [0.0], [0.0])
+    found = evaluate(s, 29.9)
+    assert "RATE_DROP" in codes(found) and "JOINT_STATES_STALE" not in codes(found)
+    assert HINTS["RATE_DROP"] and HINTS["RATE_SPIKE"]
+
+
+def test_baseline_leaves_a_dead_stream_to_the_stale_check():
+    from armdoc import baseline as bl
+    s = state()
+    for i in range(600):
+        feed_joints(s, i / 30, ["j1"], [0.0], [0.0], [0.0])
+    s.baseline = bl.learn({"joint_states": s.js_times})
+    found = codes(evaluate(s, 60.0))
+    assert "JOINT_STATES_STALE" in found and "RATE_DROP" not in found

@@ -213,6 +213,10 @@ def main(argv=None):
                     help="also publish findings to /diagnostics (the only thing armdoc ever publishes; off by default)")
     ap.add_argument("--record", metavar="FILE.jsonl", help="log timestamped joint positions and findings to a JSONL file; "
                     "turn it into a timeline with `armdoc report FILE.jsonl --html report.html`")
+    ap.add_argument("--learn", type=float, default=0.0, metavar="SECS",
+                    help="watch a healthy arm for SECS, write the normal /joint_states rate to --baseline-file, exit")
+    ap.add_argument("--baseline-file", default="armdoc_baseline.json", help="where --learn writes, and --baseline reads")
+    ap.add_argument("--baseline", action="store_true", help="also flag /joint_states far slower or faster than the learned baseline")
     ap.add_argument("--period", type=float, default=2.0)
     ap.add_argument("--grace", type=float, default=20.0)
     ap.add_argument("--stale", type=float, default=2.0)
@@ -228,6 +232,11 @@ def main(argv=None):
         a.once = a.ready
     rclpy.init(args=["armdoc"] + ros_argv)
     node = ArmDoc(a)
+    if a.baseline:
+        from armdoc import baseline as bl
+        node.s.baseline = bl.load(a.baseline_file)
+    if a.learn:
+        a.once = a.learn
     if node.diagnostics:
         node.enable_diagnostics()
     start = last = time.monotonic()
@@ -250,6 +259,13 @@ def main(argv=None):
             if a.once is not None:
                 if now - start < a.once:
                     continue
+                if a.learn:
+                    from armdoc import baseline as bl
+                    learned = bl.learn({"joint_states": node.s.js_times})
+                    bl.save(learned, a.baseline_file)
+                    print(f"learned {len(learned)} streams -> {a.baseline_file}: " +
+                          ", ".join(f"{k} {v['hz']:g} Hz" for k, v in sorted(learned.items())), flush=True)
+                    break
             elif now - last < node.period:
                 continue
             last = now

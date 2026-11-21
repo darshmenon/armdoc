@@ -73,6 +73,17 @@ How the new checks work, and what they cannot see:
 
 Limits come from `/robot_description`, and are checked only for joints that arm controllers claim (grippers and broadcasters are skipped). Missing-thing checks wait out a startup grace (`--grace`, 20 s).
 
+## Per-arm baselines
+
+A 50 Hz `/joint_states` is normal on one arm and a sign of trouble on another. Record normal once, then get warned on drift:
+
+```bash
+armdoc --learn 60 --baseline-file my_arm.json        # on a healthy arm: writes the normal /joint_states rate
+armdoc --baseline --baseline-file my_arm.json        # later: RATE_DROP / RATE_SPIKE below half or above double normal
+```
+
+The rate is the median messages per second: plain statistics, no model. A silent stream is still `JOINT_STATES_STALE`, not a rate finding.
+
 ## Parameters and launch
 
 `ros2 launch armdoc armdoc.launch.py` takes `ns`, `moveit`, `diagnostics`, `use_sim_time` and `params_file` (default `config/armdoc.yaml`). The thresholds in that file are ROS parameters of the `armdoc` node: `period`, `hints`, `stale`, `grace`, `track_err`, `stall_time`, `noise_rad`, `lag_max`. They also work without the launch file:

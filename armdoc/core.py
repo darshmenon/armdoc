@@ -55,6 +55,8 @@ class State:
     moveit_nodes: bool = None                         # None = not asked to check
     goal_active_since: float = None
     pos_hist: deque = field(default_factory=lambda: deque(maxlen=4000))
+    js_times: deque = field(default_factory=lambda: deque(maxlen=6000))      # /joint_states receive times, for baselines
+    baseline: dict = None                             # learned per-robot rates (baseline.py), or None
     aborts: deque = field(default_factory=deque)
     lag_hist: deque = field(default_factory=lambda: deque(maxlen=2000))   # (receive time, header-stamp lag in s)
     moveit_aborts: deque = field(default_factory=deque)                    # receive times of aborted /move_action goals
@@ -84,6 +86,7 @@ def parse_limits(urdf_xml):
 def feed_joints(s, now, names, pos, vel, eff, lag=None):
     """Record one joint_states sample. `lag` is receive time minus header stamp in seconds, when known."""
     s.joint_t = now
+    s.js_times.append(now)
     if lag is not None and math.isfinite(lag):
         s.lag_hist.append((now, lag))
     for i, n in enumerate(names):
@@ -168,6 +171,9 @@ def evaluate(s, now, c=Config()):
                          "(controller manager or joint_state_broadcaster is down)"))
 
     live = s.joint_t is not None and now - s.joint_t <= c.stale
+    if live and s.baseline:
+        from armdoc import baseline as bl
+        f.extend(Finding(lv, code, msg) for lv, code, msg in bl.check(s.baseline, {'joint_states': s.js_times}, now))
     if live:
         for n, (p, v, e) in s.joints.items():
             if s.arm_joints is not None and n not in s.arm_joints:
@@ -274,6 +280,8 @@ def evaluate(s, now, c=Config()):
 
 
 HINTS = {
+    "RATE_DROP": "/joint_states is much slower than this arm's learned normal: check CPU load, the controller manager update rate or a throttled bridge; re-learn with --learn if the change is intended",
+    "RATE_SPIKE": "/joint_states is much faster than this arm's learned normal: a duplicate publisher or a changed update_rate; re-learn with --learn if intended",
     "JOINT_STATES_NONE": "start joint_state_broadcaster (ros2 control load_controller --set-state active joint_state_broadcaster)",
     "JOINT_STATES_STALE": "check the controller manager and that the simulator is not paused",
     "JOINT_NAN": "restart the controller; lower gains or the control period if it diverged",

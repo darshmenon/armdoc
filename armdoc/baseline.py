@@ -62,12 +62,45 @@ def check(baseline, arrivals, now, window=WINDOW_S):
     return found
 
 
+def parse_expect(items):
+    """['scan:10', 'odom=20'] -> {'scan': {'hz': 10.0, 'jitter': 0.0, 'n': 0}}: rates stated with --expect, used like a
+    learned baseline and overriding it for the same stream. Raises ValueError on a bad item."""
+    out = {}
+    for item in items or ():
+        name, sep, hz = item.replace('=', ':').rpartition(':')
+        if not sep or not name.strip().strip('/'):
+            raise ValueError(f'--expect wants STREAM:HZ (e.g. joint_states:50), got {item!r}')
+        try:
+            rate = float(hz)
+        except ValueError:
+            raise ValueError(f'--expect {item!r}: {hz!r} is not a number') from None
+        if rate <= 0:
+            raise ValueError(f'--expect {item!r}: rate must be > 0')
+        out[name.strip().strip('/')] = {'hz': rate, 'jitter': 0.0, 'n': 0}
+    return out
+
+
 def save(baseline, path):
     with open(path, 'w') as f:
         json.dump({'version': 1, 'streams': baseline}, f, indent=2, sort_keys=True)
 
 
 def load(path):
-    with open(path) as f:
-        data = json.load(f)
-    return data['streams']
+    """Read a baseline file written by `save`. Raises ValueError with a readable message (never a bare traceback, and never
+    a malformed entry that only crashes later inside `check`) for a missing file, bad JSON, no `streams`, or an entry
+    without a positive numeric `hz`."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except OSError as e:
+        raise ValueError(f'cannot read baseline file {path!r}: {e.strerror or e}') from None
+    except ValueError as e:
+        raise ValueError(f'baseline file {path!r} is not valid JSON ({e}); re-create it with --learn') from None
+    streams = data.get('streams') if isinstance(data, dict) else None
+    if not isinstance(streams, dict):
+        raise ValueError(f'baseline file {path!r} has no "streams" object; re-create it with --learn')
+    for name, entry in streams.items():
+        hz = entry.get('hz') if isinstance(entry, dict) else None
+        if isinstance(hz, bool) or not isinstance(hz, (int, float)) or not hz > 0:
+            raise ValueError(f'baseline file {path!r}: stream {name!r} needs a positive numeric "hz", got {entry!r}')
+    return streams

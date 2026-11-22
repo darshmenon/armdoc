@@ -222,6 +222,8 @@ def main(argv=None):
     ap.add_argument("--learn", type=float, default=0.0, metavar="SECS",
                     help="watch a healthy arm for SECS, write the normal /joint_states rate to --baseline-file, exit")
     ap.add_argument("--baseline-file", default="armdoc_baseline.json", help="where --learn writes, and --baseline reads")
+    ap.add_argument("--expect", action="append", default=[], metavar="STREAM:HZ",
+                    help="expected rate, e.g. --expect joint_states:50 (repeatable); no --learn needed, overrides a learned value")
     ap.add_argument("--baseline", action="store_true", help="also flag /joint_states far slower or faster than the learned baseline")
     ap.add_argument("--period", type=float, default=2.0)
     ap.add_argument("--grace", type=float, default=20.0)
@@ -240,7 +242,18 @@ def main(argv=None):
     node = ArmDoc(a)
     if a.baseline:
         from armdoc import baseline as bl
-        node.s.baseline = bl.load(a.baseline_file)
+        try:
+            node.s.baseline = bl.load(a.baseline_file)
+        except ValueError as e:
+            ap.error(str(e))
+    if a.expect:
+        from armdoc import baseline as bl
+        try:
+            expected = bl.parse_expect(a.expect)
+        except ValueError as e:
+            ap.error(str(e))
+        node.s.baseline = {**(node.s.baseline or {}), **expected}
+        print("[armdoc] expecting rates: " + ", ".join(f"{k}={v['hz']:g} Hz" for k, v in sorted(expected.items())))
     if a.learn:
         a.once = a.learn
     if node.diagnostics:

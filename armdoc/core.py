@@ -1,10 +1,44 @@
 """ROS-free diagnosis logic for armdoc: turns a snapshot of an arm's state into findings."""
 import math
+import re
 import xml.etree.ElementTree as ET
 from collections import deque
 from dataclasses import dataclass, field
 
 ERROR, WARN = "ERROR", "WARN"
+
+# /rosout lines worth naming: (regex on the message, finding code). Patterns follow the MoveIt 2 and
+# joint_trajectory_controller sources; checked against the pattern text, not yet against a stack that emits them.
+LOG_PATTERNS = (
+    (re.compile(r"unable to sample any valid states for goal tree|goal state is in collision|goal state .*invalid", re.I),
+     "LOG_PLAN_GOAL_INVALID"),
+    (re.compile(r"start state (appears to be )?in collision|start state .*(invalid|out of bounds)", re.I), "LOG_START_STATE_BAD"),
+    (re.compile(r"start point deviates from current robot state|trajectory.*deviates", re.I), "LOG_START_DEVIATES"),
+    (re.compile(r"unable to identify any set of controllers|no controller .*(found|available)|controller .* is not known", re.I),
+     "LOG_NO_CONTROLLER"),
+    (re.compile(r"action client not connected|timed out waiting for .*(action|controller)", re.I), "LOG_ACTION_NOT_CONNECTED"),
+    (re.compile(r"didn'?t receive(d)? robot state|failed to fetch current robot state|couldn'?t receive full current joint state", re.I),
+     "LOG_ROBOT_STATE_STALE"),
+    (re.compile(r"(goal|path)[ _]tolerance[ _]?(violat|failed)|aborted due to .*tolerance|tolerance violat", re.I), "LOG_TOLERANCE_VIOLATED"),
+    (re.compile(r"controller handle .* reports status (aborted|canceled|rejected)|trajectory execution .*(failed|aborted)", re.I),
+     "LOG_EXEC_ABORTED"),
+)
+LOG_NODES = ("move_group", "moveit", "controller_manager", "ros2_control_node", "controller")   # substring of the logger name
+LOG_WINDOW_S = 30.0
+
+
+def classify_log(msg):
+    """Finding code for a /rosout message, or None."""
+    for rx, code in LOG_PATTERNS:
+        if rx.search(msg):
+            return code
+    return None
+
+
+def log_from(name):
+    """True for a logger name that belongs to the arm stack (move_group, a controller, the controller manager)."""
+    low = (name or "").lower()
+    return any(n in low for n in LOG_NODES)
 
 
 @dataclass
@@ -56,6 +90,7 @@ class State:
     goal_active_since: float = None
     pos_hist: deque = field(default_factory=lambda: deque(maxlen=4000))
     js_times: deque = field(default_factory=lambda: deque(maxlen=6000))      # /joint_states receive times, for baselines
+    logs: dict = field(default_factory=dict)          # LOG_* code -> [last message, [times]]
     baseline: dict = None                             # learned per-robot rates (baseline.py), or None
     aborts: deque = field(default_factory=deque)
     lag_hist: deque = field(default_factory=lambda: deque(maxlen=2000))   # (receive time, header-stamp lag in s)
@@ -81,6 +116,14 @@ def parse_limits(urdf_xml):
         out[j.get("name")] = dict(lower=g("lower"), upper=g("upper"), velocity=g("velocity"), effort=g("effort"),
                                   continuous=j.get("type") == "continuous")
     return out
+
+
+def feed_log(s, msg, now):
+    code = classify_log(msg)
+    if code:
+        entry = s.logs.setdefault(code, [msg, deque(maxlen=200)])
+        entry[0] = msg
+        entry[1].append(now)
 
 
 def feed_joints(s, now, names, pos, vel, eff, lag=None):
@@ -169,6 +212,11 @@ def evaluate(s, now, c=Config()):
     elif now - s.joint_t > c.stale:
         f.append(Finding(ERROR, "JOINT_STATES_STALE", f"/joint_states silent for {now - s.joint_t:.1f}s "
                          "(controller manager or joint_state_broadcaster is down)"))
+
+    for code, (msg, times) in s.logs.items():
+        recent = [t for t in times if now - t <= LOG_WINDOW_S]
+        if recent:
+            f.append(Finding(WARN, code, f"{len(recent)}x in the last {LOG_WINDOW_S:.0f}s: {msg[:140]}"))
 
     live = s.joint_t is not None and now - s.joint_t <= c.stale
     if live and s.baseline:
@@ -280,6 +328,14 @@ def evaluate(s, now, c=Config()):
 
 
 HINTS = {
+    "LOG_PLAN_GOAL_INVALID": "MoveIt cannot sample a valid goal: the target pose is in collision, out of reach or outside joint limits; try another pose, check the planning scene and the IK solver settings",
+    "LOG_START_STATE_BAD": "the planning start state is in collision or out of bounds: the arm is touching something in the scene, or joint_states disagrees with the model; check the planning scene and the joint limits",
+    "LOG_START_DEVIATES": "the trajectory starts away from where the arm really is: stale joint_states, a controller that moved after planning, or too tight allowed_start_tolerance; re-plan, or check the joint_states rate",
+    "LOG_NO_CONTROLLER": "move_group has no controller for the planned joints: compare moveit_controllers.yaml joint lists with the ros2_control controllers (armdoc also flags MOVEIT_CTRL_MISMATCH)",
+    "LOG_ACTION_NOT_CONNECTED": "move_group cannot reach the controller's follow_joint_trajectory action: the controller is inactive or named differently from moveit_controllers.yaml; `ros2 control list_controllers`, `ros2 action list`",
+    "LOG_ROBOT_STATE_STALE": "move_group is not getting fresh joint_states: the broadcaster is down, a clock mismatch (use_sim_time), or a remapped topic",
+    "LOG_TOLERANCE_VIOLATED": "the arm did not follow the trajectory within tolerance: too tight path or goal tolerances, a slow or saturated joint, or load; loosen constraints.*_tolerance or slow the trajectory",
+    "LOG_EXEC_ABORTED": "the controller aborted or rejected the trajectory: read the joint_trajectory_controller log just before this line (tolerance, invalid start, or an inactive state)",
     "RATE_DROP": "/joint_states is much slower than this arm's learned normal: check CPU load, the controller manager update rate or a throttled bridge; re-learn with --learn if the change is intended",
     "RATE_SPIKE": "/joint_states is much faster than this arm's learned normal: a duplicate publisher or a changed update_rate; re-learn with --learn if intended",
     "JOINT_STATES_NONE": "start joint_state_broadcaster (ros2 control load_controller --set-state active joint_state_broadcaster)",

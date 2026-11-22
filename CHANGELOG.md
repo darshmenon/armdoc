@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- New `LOG_*` warnings from `/rosout` (WARN and above from `move_group`, `controller_manager` and the controllers), counted over 30 s, each with a hint: `LOG_PLAN_GOAL_INVALID`, `LOG_START_STATE_BAD`, `LOG_START_DEVIATES`, `LOG_NO_CONTROLLER`, `LOG_ACTION_NOT_CONNECTED`, `LOG_ROBOT_STATE_STALE`, `LOG_TOLERANCE_VIOLATED`, `LOG_EXEC_ABORTED`. Unit-tested on the message patterns and run live against a fake `move_group` log line; not yet against a real MoveIt stack that emits each message.
 - Per-arm baselines: `--learn SECS` records the normal `/joint_states` rate, `--baseline` warns with `RATE_DROP` / `RATE_SPIKE` below half or above double that. Plain statistics, no model. Run live against the fake arm (learn at 50 Hz, quiet at 50 Hz, `RATE_DROP` at 10 Hz).
 
 ## 0.5.0

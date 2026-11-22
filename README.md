@@ -63,6 +63,10 @@ ERROR [TRAJ_STALLED] a trajectory goal has been active for 10s but the joints mo
 | `NOISY_JOINTS` | warn | position jitter above 0.002 rad (estimated over 1 s, at 20 Hz or faster): encoder or driver noise |
 | `STREAM_LAG` | warn | `/joint_states` arrive more than 0.5 s after their header stamp, so the controller and planner see old data |
 | `GOAL_ABORTS` | warn | 3 or more trajectory goals aborted or cancelled within 30 s |
+| `LOG_PLAN_GOAL_INVALID` / `LOG_START_STATE_BAD` / `LOG_START_DEVIATES` | warn | `move_group` logged that the goal cannot be sampled (in collision, unreachable), the start state is in collision, or the trajectory starts away from the real arm |
+| `LOG_NO_CONTROLLER` / `LOG_ACTION_NOT_CONNECTED` | warn | `move_group` logged that no controller covers the joints, or cannot reach a controller's `follow_joint_trajectory` action |
+| `LOG_ROBOT_STATE_STALE` | warn | `move_group` logged that it gets no fresh joint state |
+| `LOG_TOLERANCE_VIOLATED` / `LOG_EXEC_ABORTED` | warn | a trajectory controller logged a path or goal tolerance violation, or `move_group` logged an aborted or rejected execution |
 
 How the new checks work, and what they cannot see:
 
@@ -70,6 +74,8 @@ How the new checks work, and what they cannot see:
 - **`STREAM_LAG`** compares a message's header stamp with the time it arrives, using the median of the last 2 s. When the stamps are simulation time, run armdoc with `--ros-args -p use_sim_time:=true`, otherwise the two clocks differ by years and the check stays silent on purpose. A source that restamps old data is invisible to it. Tune with `--lag-max`.
 - **`MOVEIT_PLAN_FAILED`** counts goals that went to ABORTED on `/move_action/_action/status` after armdoc attached; goals that finished before that are history, judged by the goal's own timestamp. It cannot tell you why planning failed, only that it did.
 - **`NO_PLANNING_SCENE`** looks for a publisher on `/monitored_planning_scene` or a `/get_planning_scene` service rather than waiting for a message, because MoveIt publishes the scene only when it changes.
+
+The `LOG_*` rows read WARN and ERROR lines on `/rosout` from `move_group`, `controller_manager` and the controllers, counted over 30 s, each with a hint. The patterns follow the MoveIt 2 and `joint_trajectory_controller` sources and are tested on the message text and with a fake `move_group` log line; they have not yet been run against a real stack that emits each one.
 
 Limits come from `/robot_description`, and are checked only for joints that arm controllers claim (grippers and broadcasters are skipped). Missing-thing checks wait out a startup grace (`--grace`, 20 s).
 

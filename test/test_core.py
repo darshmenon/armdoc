@@ -189,3 +189,51 @@ def test_baseline_leaves_a_dead_stream_to_the_stale_check():
     s.baseline = bl.learn({"joint_states": s.js_times})
     found = codes(evaluate(s, 60.0))
     assert "JOINT_STATES_STALE" in found and "RATE_DROP" not in found
+
+
+# ---- /rosout log checks ---------------------------------------------------------------------------
+
+LOG_CASES = {
+    "Unable to sample any valid states for goal tree": "LOG_PLAN_GOAL_INVALID",
+    "Goal state is in collision": "LOG_PLAN_GOAL_INVALID",
+    "Start state appears to be in collision with respect to group arm": "LOG_START_STATE_BAD",
+    "Invalid Trajectory: start point deviates from current robot state more than 0.01": "LOG_START_DEVIATES",
+    "Unable to identify any set of controllers that can actuate the specified joints: [ j1 j2 ]": "LOG_NO_CONTROLLER",
+    "Action client not connected to action server: arm_controller/follow_joint_trajectory": "LOG_ACTION_NOT_CONNECTED",
+    "Didn't receive robot state (joint angles) with recent timestamp within 1.0 seconds.": "LOG_ROBOT_STATE_STALE",
+    "Failed to fetch current robot state.": "LOG_ROBOT_STATE_STALE",
+    "Aborted due to path tolerance violation on joint j3": "LOG_TOLERANCE_VIOLATED",
+    "Controller handle arm_controller reports status ABORTED": "LOG_EXEC_ABORTED",
+}
+
+
+def test_log_lines_are_classified():
+    from armdoc.core import classify_log
+    for msg, code in LOG_CASES.items():
+        assert classify_log(msg) == code, msg
+    for noise in ("Loading robot model 'ur3'", "Planning request received", "Execution completed: SUCCEEDED", ""):
+        assert classify_log(noise) is None, noise
+
+
+def test_only_arm_stack_loggers_count():
+    from armdoc.core import log_from
+    assert all(log_from(n) for n in ("move_group", "moveit.ros.trajectory_execution_manager", "controller_manager",
+                                     "arm_controller", "ros2_control_node"))
+    assert not any(log_from(n) for n in ("rviz2", "robot_state_publisher", "gazebo", ""))
+
+
+def test_log_finding_is_reported_counted_and_ages_out():
+    from armdoc.core import feed_log
+    s = state()
+    for i in range(3):
+        feed_log(s, "Action client not connected to action server: arm_controller/follow_joint_trajectory", 10.0 + i)
+    feed_log(s, "Loading robot model", 11.0)                        # noise is dropped
+    f = [x for x in evaluate(s, 13.0) if x.code == "LOG_ACTION_NOT_CONNECTED"]
+    assert len(f) == 1 and f[0].level == "WARN" and f[0].msg.startswith("3x in the last 30s")
+    assert "LOG_ACTION_NOT_CONNECTED" not in codes(evaluate(s, 60.0))
+
+
+def test_every_log_code_has_a_hint():
+    from armdoc.core import LOG_PATTERNS
+    for _, code in LOG_PATTERNS:
+        assert HINTS.get(code), code

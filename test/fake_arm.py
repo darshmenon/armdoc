@@ -20,6 +20,7 @@ from controller_manager_msgs.srv import ListControllers
 from rclpy.node import Node
 from rclpy.time import Time
 from rclpy.qos import DurabilityPolicy, QoSProfile
+from rcl_interfaces.msg import Log
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
@@ -31,6 +32,7 @@ URDF = '<robot name="r"><link name="a"/><link name="b"/>' + "".join(
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hz", type=float, default=50.0, help="joint_states rate")
+    ap.add_argument("--log", default="", help="publish this message on /rosout at WARN level from move_group, once a second")
     ap.add_argument("--freeze", action="store_true")
     ap.add_argument("--inactive", action="store_true")
     ap.add_argument("--stall", action="store_true")
@@ -68,6 +70,9 @@ def main():
             g.status_list = [s]
             st.publish(g)
     n.create_timer(1.0 / a.hz, tick)
+    if a.log:
+        lp = n.create_publisher(Log, "/rosout", 100)
+        n.create_timer(1.0, lambda: lp.publish(Log(level=30, name="move_group", msg=a.log)))
 
     if a.moveit:
         import uuid

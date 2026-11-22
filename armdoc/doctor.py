@@ -9,6 +9,7 @@ import rclpy
 from action_msgs.msg import GoalStatusArray
 from control_msgs.msg import JointTrajectoryControllerState
 from controller_manager_msgs.srv import ListControllers
+from rcl_interfaces.msg import Log
 from rcl_interfaces.srv import GetParameters
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -18,7 +19,7 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 from armdoc.record import Recorder
-from armdoc.core import (Config, State, evaluate, feed_joints, format_findings, is_arm_controller, parse_limits,
+from armdoc.core import (Config, State, evaluate, feed_joints, feed_log, log_from, format_findings, is_arm_controller, parse_limits,
                          update_arm_joints, verdict_line)
 
 EXECUTING, ABORTED, CANCELED = 2, 6, 5
@@ -54,10 +55,15 @@ class ArmDoc(Node):
         self.pending = None
         if self.moveit:
             self.watch_status(f"{self.ns}/move_action/_action/status", False, moveit=True)
+        self.create_subscription(Log, "/rosout", self.on_rosout, QoSProfile(depth=200))
         self.create_timer(1.0, self.poll)
 
     def now(self):
         return time.monotonic()
+
+    def on_rosout(self, m):
+        if m.level >= 30 and log_from(m.name):
+            feed_log(self.s, m.msg, self.now())
 
     def on_js(self, m):
         lag = None

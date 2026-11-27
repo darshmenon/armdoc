@@ -4,6 +4,8 @@
 
 **Why isn't my arm moving?** Attach to a running ros2_control / MoveIt 2 arm and get a one-line cause. Read-only: it subscribes to topics and lists controllers, and never publishes or changes anything.
 
+Part of [ros2-doctor-tools](https://github.com/darshmenon/ros2-doctor-tools), an index of my ROS 2 diagnosis, fault injection and evaluation tools.
+
 ## Quick start
 
 ```bash
@@ -18,6 +20,16 @@ docker run --rm armdoc                                      # no robot? try it o
 cd ~/ros2_ws/src && git clone https://github.com/darshmenon/armdoc.git
 cd .. && colcon build --packages-select armdoc && source install/setup.bash
 ```
+
+Or with pip (the launch file example above needs the colcon build):
+
+```bash
+# ROS 2 sourced; if you use a venv, create it with --system-site-packages
+pip install git+https://github.com/darshmenon/armdoc
+armdoc --help
+```
+
+A pip install puts the `armdoc` command on your PATH; run it directly. The `ros2 run` form needs the colcon build.
 
 **Docker** (nothing else to install; the demo runs a healthy fake arm, then a stalled one, then a fake MoveIt with no planning scene):
 
